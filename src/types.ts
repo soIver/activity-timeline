@@ -18,7 +18,7 @@ export interface TimeEntry {
     project?: string;
     /** Optional activity type (feat, fix, meeting, etc.) */
     activity?: string;
-    /** Client for billing (required) */
+    /** Legacy client metadata. Personal entries use "personal" internally. */
     client: string;
     /** Optional wikilink path to linked note */
     linkedNote?: string;
@@ -36,7 +36,6 @@ export interface TimeEntry {
 
 /**
  * A project for categorizing time entries
- * Projects belong to a client
  */
 export interface Project {
     /** Unique identifier (slug) */
@@ -49,16 +48,13 @@ export interface Project {
     color: string;
     /** Whether the project is archived */
     archived: boolean;
-    /** Client ID this project belongs to (required) */
+    /** Preserved on imported categories; not used for grouping. */
     clientId?: string;
-    /** Optional rate override (uses client rate if not set) */
-    rateOverride?: number;
 }
 
 /**
  * An activity type for classifying work (feat, fix, meeting, etc.)
  * Single value per entry, mutually exclusive - enables % breakdowns
- * Activities belong to a client
  */
 export interface Activity {
     /** Unique identifier (slug) */
@@ -69,53 +65,8 @@ export interface Activity {
     aliases?: string[];
     /** Hex color for reports/display */
     color: string;
-    /** Client ID this activity belongs to (required) */
+    /** Preserved on imported categories; not used for grouping. */
     clientId?: string;
-}
-
-/**
- * A client for billing and invoicing
- * Projects can optionally belong to a client
- */
-export interface Client {
-    /** Unique identifier (slug) */
-    id: string;
-    /** Display name */
-    name: string;
-    /** Hex color for UI */
-    color: string;
-    /** Whether the client is archived */
-    archived: boolean;
-
-    // Billing
-    /** Hourly billing rate (e.g., 150) */
-    rate: number;
-    /** Currency code (USD, EUR, GBP, etc.) */
-    currency: string;
-
-    // Invoice Details
-    /** Multi-line billing address (use \n for line breaks) */
-    address?: string;
-    /** Invoice recipient email */
-    email?: string;
-    /** VAT/Tax ID number */
-    taxId?: string;
-    /** Payment terms (e.g., "Net 30", "Due on receipt") */
-    paymentTerms?: string;
-
-    // Optional
-    /** Internal notes about client */
-    notes?: string;
-}
-
-/**
- * Bill From information for invoices
- */
-export interface BillFrom {
-    /** Your name or business name */
-    name: string;
-    /** Multi-line address */
-    address: string;
 }
 
 /**
@@ -126,10 +77,6 @@ export interface TimeTrackerSettings {
     language: 'auto' | 'en' | 'ru';
     /** Root folder for time tracking files */
     timeTrackingFolder: string;
-    /** Bill From info for invoices */
-    billFrom: BillFrom;
-    /** Folder for generated invoices (relative to vault root) */
-    invoiceFolder: string;
     /** Pixels per hour in timeline view */
     hourHeight: number;
     /** First hour to display (0-23) */
@@ -152,14 +99,10 @@ export interface TimeTrackerSettings {
     activities: Activity[];
     /** Default activity for new entries */
     defaultActivity: string;
-    /** List of clients */
-    clients: Client[];
     /** Enable debug logging to console */
     debugMode: boolean;
     /** Hide data tables in reading view using %% comment markers */
     hideTablesInPreview: boolean;
-    /** Show billing features (rates, billable amounts, invoices) */
-    enableBilling: boolean;
 }
 
 /**
@@ -168,11 +111,6 @@ export interface TimeTrackerSettings {
 export const DEFAULT_SETTINGS: TimeTrackerSettings = {
     language: 'auto',
     timeTrackingFolder: 'TimeTracking',
-    billFrom: {
-        name: '',
-        address: '',
-    },
-    invoiceFolder: 'TimeTracking/Invoices',
     hourHeight: 200,
     dayStartHour: 6,
     dayEndHour: 22,
@@ -181,25 +119,11 @@ export const DEFAULT_SETTINGS: TimeTrackerSettings = {
     weekStart: 'monday',
     autoCreateFolder: true,
     descriptionMaxLength: 200,
-    clients: [
-        {
-            id: 'personal',
-            name: 'Personal',
-            color: '#4f46e5',
-            archived: false,
-            rate: 0,
-            currency: 'USD',
-            paymentTerms: 'N/A',
-        },
-    ],
-    projects: [
-        { id: 'default', name: 'Default', color: '#4f46e5', archived: false, clientId: 'personal' },
-    ],
+    projects: [],
     activities: [],
     defaultActivity: '',
     debugMode: false,
     hideTablesInPreview: true,
-    enableBilling: true,
 };
 
 /**
@@ -273,28 +197,4 @@ export interface ActivityReport {
     totalMinutes: number;
     /** Percentage of total time */
     percentage: number;
-}
-
-/**
- * Report data for a single client
- */
-export interface ClientReport {
-    /** Client id */
-    clientId?: string;
-    /** Client display name */
-    name: string;
-    /** Client color */
-    color: string;
-    /** Hourly billing rate */
-    rate: number;
-    /** Currency code */
-    currency: string;
-    /** Total minutes for this client */
-    totalMinutes: number;
-    /** Calculated billable amount (rate * hours or days) */
-    billableAmount: number;
-    /** Percentage of total time */
-    percentage: number;
-    /** Breakdown by project within this client */
-    projectBreakdown: ProjectReport[];
 }
