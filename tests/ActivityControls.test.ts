@@ -2,7 +2,10 @@ import { jest } from '@jest/globals';
 import { JSDOM } from 'jsdom';
 import { App } from 'obsidian';
 import { ColorPalette, hsvToHex, rgbToHsv } from '../src/components/ColorPalette';
-import { ActivityModal } from '../src/modals/ActivityModal';
+import { ActivityModal, ActivityManagerModal } from '../src/modals/ActivityModal';
+import { NotePathSuggest } from '../src/components/NotePathSuggest';
+import { EntryModal } from '../src/modals/EntryModal';
+import { DataManager } from '../src/data/DataManager';
 import { DEFAULT_SETTINGS } from '../src/types';
 import { configureLanguage } from '../src/i18n';
 import { installElementHelpers, installObsidianDomHelpers } from './__mocks__/obsidianDom';
@@ -104,5 +107,68 @@ describe('Activity editor persistence', () => {
         input.value = ' read '; input.dispatchEvent(new dom.window.Event('input'));
         doc.querySelector<HTMLButtonElement>('button.mod-cta')!.click(); await flush();
         expect(save).not.toHaveBeenCalled(); expect(settings.activities).toHaveLength(1);
+    });
+});
+
+describe('Entry form and timeline actions', () => {
+    it('shows shared activities and projects with Russian UI and no client selector', async () => {
+        const { dom, doc, settings } = setup();
+        configureLanguage('ru');
+        settings.activities = [{ id: 'read', name: 'Чтение', clientId: 'old-client', color: '#8f72c5' }];
+        settings.projects.push({ id: 'study', name: 'Учёба', clientId: 'another-client', color: '#708a9b', archived: false });
+        const manager = { findOverlaps: async (): ReturnType<DataManager['findOverlaps']> => ({ startOverlap: null, endOverlap: null, encompassedEntry: null }),
+            findAdjacentEntries: async (): ReturnType<DataManager['findAdjacentEntries']> => ({ previous: null, next: null }) } as unknown as DataManager;
+        const suggestClose = jest.spyOn(NotePathSuggest.prototype, 'close');
+        const modal = new EntryModal({} as App, settings, manager,
+            { mode: 'create', date: new Date(2026, 10, 9), startTime: '09:00', endTime: '10:00' }, () => {});
+        modal.contentEl = doc.body; modal.onOpen(); await flush();
+        expect(modal.titleEl.textContent).toBe('Новая запись времени');
+        expect(doc.body.textContent).toContain('Управление активностями');
+        expect(doc.body.textContent).toContain('Управление проектами');
+        expect(doc.body.textContent).not.toContain('Продолжительность');
+        expect(doc.querySelectorAll('.at-category-setting')).toHaveLength(2);
+        expect(doc.body.textContent).not.toMatch(/Добавить активность|Новая активность/);
+        expect(doc.body.textContent).not.toMatch(/Client|Клиент|Personal/);
+        expect(doc.querySelectorAll('select')).toHaveLength(0);
+        expect(doc.querySelector<HTMLInputElement>('[placeholder="Название проекта"]')).not.toBeNull();
+        expect(doc.querySelector<HTMLInputElement>('[placeholder="Название активности"]')).not.toBeNull();
+        expect(doc.querySelector<HTMLInputElement>('[placeholder="Путь к заметке"]')).not.toBeNull();
+        modal.onClose();
+        expect(suggestClose).toHaveBeenCalledTimes(1);
+        suggestClose.mockRestore();
+        dom.window.close();
+    });
+    it('opens project management and refreshes renamed projects without clearing the entry', async () => {
+        const { doc, dom, settings } = setup();
+        settings.projects = [{ id: 'study', name: 'Study', color: '#708a9b', archived: false }];
+        settings.defaultProject = 'study';
+        const saveSettings = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        const manager = {
+            findOverlaps: async (): ReturnType<DataManager['findOverlaps']> => ({ startOverlap: null, endOverlap: null, encompassedEntry: null }),
+            findAdjacentEntries: async (): ReturnType<DataManager['findAdjacentEntries']> => ({ previous: null, next: null }),
+        } as unknown as DataManager;
+        const modal = new EntryModal({} as App, settings, manager,
+            { mode: 'create', date: new Date(2026, 10, 9), startTime: '09:00', endTime: '10:00' }, () => {}, saveSettings);
+        modal.contentEl = doc.body; modal.onOpen(); await flush();
+        const description = doc.querySelector<HTMLTextAreaElement>('textarea')!;
+        description.value = 'Draft entry'; description.dispatchEvent(new dom.window.Event('input'));
+        let projects: ActivityManagerModal | undefined;
+        const open = jest.spyOn(ActivityManagerModal.prototype, 'open').mockImplementation(function (this: ActivityManagerModal) {
+            projects = this;
+        });
+        try {
+            const row = doc.querySelector('.at-category-setting')!;
+            expect(row.querySelector('button')!.textContent).toBe('Manage projects');
+            row.querySelector('button')!.click();
+            expect(projects).toBeDefined();
+            expect(projects!['kind']).toBe('project');
+            settings.projects[0] = { ...settings.projects[0], name: 'Учёба', aliases: ['Study'] };
+            projects!['onChange']();
+            expect(row.querySelector('input')!.value).toBe('Учёба');
+            expect(description.value).toBe('Draft entry');
+            expect(modal['descriptionValue']).toBe('Draft entry');
+        } finally {
+            open.mockRestore(); modal.onClose();
+        }
     });
 });

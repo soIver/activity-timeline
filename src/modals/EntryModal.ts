@@ -1,10 +1,18 @@
-import { setModalTitle } from './ModalLayout';
-import { App, Modal, Setting, DropdownComponent, TextComponent, Notice, FuzzySuggestModal, TFile } from 'obsidian';
-import { TimeEntry, TimeTrackerSettings } from '../types';
+import { t } from '../i18n';
+import { App, Modal, Setting, TextComponent, Notice, FuzzySuggestModal, TFile } from 'obsidian';
+import { TimeEntry, TimeTrackerSettings, Activity } from '../types';
 import { DataManager } from '../data/DataManager';
 import { TableParser } from '../data/TableParser';
 import { Logger } from '../utils/Logger';
+import { ActivityManagerModal } from './ActivityModal';
+import { setModalTitle } from './ModalLayout';
+import { CategorySuggest } from '../components/CategorySuggest';
+import { NotePathSuggest } from '../components/NotePathSuggest';
+import { bindFieldValidation } from '../components/FieldValidation';
+import { ValidationMessage } from '../components/ValidationMessage';
 import { TimeInput } from '../components/TimeInput';
+
+type EntryField = 'project' | 'activity' | 'note';
 
 /**
  * Simple confirmation modal to replace browser confirm()
@@ -21,14 +29,15 @@ class ConfirmModal extends Modal {
 
     onOpen(): void {
         const { contentEl } = this;
+        setModalTitle(this, t('Delete entry'));
         contentEl.createEl('p', { text: this.message });
 
         const buttonRow = contentEl.createDiv('modal-button-row');
 
-        const cancelBtn = buttonRow.createEl('button', { text: 'Cancel' });
+        const cancelBtn = buttonRow.createEl('button', { text: t('Cancel') });
         cancelBtn.addEventListener('click', () => this.close());
 
-        const confirmBtn = buttonRow.createEl('button', { text: 'Delete', cls: 'mod-warning' });
+        const confirmBtn = buttonRow.createEl('button', { text: t('Delete'), cls: 'mod-warning' });
         confirmBtn.addEventListener('click', () => {
             this.onConfirm();
             this.close();
@@ -75,16 +84,18 @@ export class EntryModal extends Modal {
     private startTimeValue: string;
     private endDateValue: string;
     private endTimeValue: string;
-    private durationValue: string; // e.g., "1h 30m" or "90m"
     private descriptionValue: string;
     private clientValue: string;
     private projectValue: string;
     private activityValue: string;
     private linkedNoteValue: string;
 
-    // Dropdown references for cascading updates
-    private projectDropdown: DropdownComponent | null = null;
-    private activityDropdown: DropdownComponent | null = null;
+    private static nextId = 0;
+    private readonly fieldPrefix = `at-entry-${EntryModal.nextId++}`;
+    private readonly fieldInputs: Partial<Record<EntryField, TextComponent>> = {};
+    private readonly fieldErrors: Partial<Record<EntryField, ValidationMessage>> = {};
+    private fieldRevision = 0;
+    private isSaving = false;
 
     // Cleanup handlers
     private cleanupHandlers: (() => void)[] = [];
@@ -92,13 +103,12 @@ export class EntryModal extends Modal {
     // Input references for updating
     private endDateInput: TextComponent | null = null;
     private endTimeInput: TimeInput | null = null;
-    private durationInput: TextComponent | null = null;
     private startDateInput: TextComponent | null = null;
     private startTimeInput: TimeInput | null = null;
 
     // Overlap validation UI
     private saveButton: HTMLButtonElement | null = null;
-    private warningBanner: HTMLElement | null = null;
+    private warningBanner: ValidationMessage | null = null;
     private startOverlap: TimeEntry | null = null;
     private endOverlap: TimeEntry | null = null;
     private encompassedEntry: TimeEntry | null = null;
@@ -120,7 +130,8 @@ export class EntryModal extends Modal {
         settings: TimeTrackerSettings,
         dataManager: DataManager,
         data: EntryModalData,
-        onSave: () => void
+        onSave: () => void,
+        private readonly saveSettings: () => Promise<void> = async () => {},
     ) {
         super(app);
         this.settings = settings;
@@ -135,7 +146,6 @@ export class EntryModal extends Modal {
             this.startTimeValue = data.entry.start;
             this.endDateValue = TableParser.getDateString(data.entry.endDateTime);
             this.endTimeValue = data.entry.end;
-            this.durationValue = this.formatDurationMinutes(data.entry.durationMinutes);
             this.descriptionValue = data.entry.description;
             this.clientValue = data.entry.client;
             this.projectValue = this.resolveProjectName(data.entry.project);
@@ -164,12 +174,12 @@ export class EntryModal extends Modal {
             } else {
                 // Default +1 hour
                 this.endDateValue = this.startDateValue;
-                this.endTimeValue = this.addHourToTime(this.startTimeValue);
+                const minutes = this.timeToMinutes(this.startTimeValue) + 60;
+                this.endTimeValue = `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
             }
 
-            this.durationValue = this.calculateDurationFromDates();
             this.descriptionValue = '';
-            // Preserve legacy storage metadata for personal entries.
+            // Preserve the original storage format without exposing clients.
             this.clientValue = 'personal';
             this.projectValue = this.resolveProjectName(this.settings.defaultProject);
             this.activityValue = this.resolveActivityName(this.settings.defaultActivity);
@@ -183,31 +193,30 @@ export class EntryModal extends Modal {
         contentEl.addClass('time-tracker-entry-modal');
 
         // Title
-        const title = this.data.mode === 'edit' ? 'Edit Time Entry' : 'New Time Entry';
+        const title = this.data.mode === 'edit' ? t('Edit Time Entry') : t('New Time Entry');
         setModalTitle(this, title);
+
         const interval = contentEl.createDiv('at-entry-range');
 
         // Start row: Date and Time with magnet button
         const startRow = interval.createDiv('time-row');
 
         const startSetting = new Setting(startRow)
-            .setName('Start')
+            .setName(t('Start'))
             .addText((text) => {
                 this.startDateInput = text;
                 text.setValue(this.startDateValue);
                 text.inputEl.type = 'date';
                 text.onChange((value) => {
                     this.startDateValue = value;
-                    this.recalculateDuration();
-                    void this.validateOverlap();
+                    this.resetTimeValidation();
                     void this.findAdjacentEntries();
                 });
             });
         this.startTimeInput = new TimeInput(startSetting.controlEl, this.settings.use24HourFormat,
-            'Start', this.startTimeValue, (value) => {
+            t('Start'), this.startTimeValue, (value) => {
                 this.startTimeValue = value;
-                this.recalculateDuration();
-                void this.validateOverlap();
+                this.resetTimeValidation();
                 void this.findAdjacentEntries();
             });
 
@@ -226,25 +235,26 @@ export class EntryModal extends Modal {
         const endRow = interval.createDiv('time-row');
 
         const endSetting = new Setting(endRow)
-            .setName('End')
+            .setName(t('End'))
             .addText((text) => {
                 this.endDateInput = text;
                 text.setValue(this.endDateValue);
                 text.inputEl.type = 'date';
                 text.onChange((value) => {
                     this.endDateValue = value;
-                    this.recalculateDuration();
-                    void this.validateOverlap();
+                    this.resetTimeValidation();
                     void this.findAdjacentEntries();
                 });
             });
         this.endTimeInput = new TimeInput(endSetting.controlEl, this.settings.use24HourFormat,
-            'End', this.endTimeValue, (value) => {
+            t('End'), this.endTimeValue, (value) => {
                 this.endTimeValue = value;
-                this.recalculateDuration();
-                void this.validateOverlap();
+                this.resetTimeValidation();
                 void this.findAdjacentEntries();
             });
+
+        this.cleanupHandlers.push(bindFieldValidation(interval,
+            () => this.validateTimeOnBlur(), () => this.resetTimeValidation()));
 
         // Magnet button for end (snap to start of next entry)
         this.endSnapHint = endSetting.controlEl.createEl('button', {
@@ -258,32 +268,47 @@ export class EntryModal extends Modal {
         });
 
         // Overlap warning banner (hidden by default)
-        this.warningBanner = contentEl.createDiv('overlap-warning-banner');
-        this.warningBanner.addClass('is-hidden');
+        this.warningBanner = new ValidationMessage(contentEl);
 
-        // Project dropdown
-        new Setting(contentEl)
-            .setName('Project')
-            .addDropdown((dropdown) => {
-                this.projectDropdown = dropdown;
-                this.populateProjectDropdown(dropdown);
-                dropdown.setValue(this.projectValue);
-                dropdown.onChange((value) => {
-                    this.projectValue = value;
-                });
+        const projectSetting = new Setting(contentEl).setName(t('Project'));
+        projectSetting.settingEl.addClass('at-category-setting');
+        this.addEntryField(projectSetting, 'project', t('Project name'), this.projectValue, value => {
+            this.projectValue = value;
+        });
+        const projectSuggest = new CategorySuggest(this.app, this.fieldInputs.project.inputEl,
+            () => this.settings.projects.filter(project => !project.archived), name => {
+                this.fieldInputs.project.setValue(name);
+                this.projectValue = name;
+                this.clearEntryFieldError('project');
             });
+        this.cleanupHandlers.push(() => projectSuggest.close());
+        projectSetting.addButton(button => button.setButtonText(t('Manage projects')).onClick(() => {
+            new ActivityManagerModal(this.app, this.settings, this.saveSettings, () => {
+                this.projectValue = this.resolveProjectName(this.projectValue);
+                this.fieldInputs.project.setValue(this.projectValue);
+                this.clearEntryFieldError('project');
+            }, 'project').open();
+        }));
 
-        // Activity dropdown
-        new Setting(contentEl)
-            .setName('Activity')
-            .addDropdown((dropdown) => {
-                this.activityDropdown = dropdown;
-                this.populateActivityDropdown(dropdown);
-                dropdown.setValue(this.activityValue);
-                dropdown.onChange((value) => {
-                    this.activityValue = value;
-                });
+        const activitySetting = new Setting(contentEl).setName(t('Activity'));
+        activitySetting.settingEl.addClass('at-category-setting');
+        this.addEntryField(activitySetting, 'activity', t('Activity name'), this.activityValue, value => {
+            this.activityValue = value;
+        });
+        const activitySuggest = new CategorySuggest(this.app, this.fieldInputs.activity.inputEl,
+            () => this.settings.activities, name => {
+                this.fieldInputs.activity.setValue(name);
+                this.activityValue = name;
+                this.clearEntryFieldError('activity');
             });
+        this.cleanupHandlers.push(() => activitySuggest.close());
+        activitySetting.addButton(button => button.setButtonText(t('Manage activities')).onClick(() => {
+            new ActivityManagerModal(this.app, this.settings, this.saveSettings, () => {
+                this.activityValue = this.resolveActivityName(this.activityValue);
+                this.fieldInputs.activity.setValue(this.activityValue);
+                this.clearEntryFieldError('activity');
+            }).open();
+        }));
 
         // Description with character counter in label
         const maxLen = this.settings.descriptionMaxLength;
@@ -292,7 +317,7 @@ export class EntryModal extends Modal {
 
         // Create label with counter
         const descLabel = descSetting.nameEl;
-        descLabel.setText('Description ');
+        descLabel.setText(t('Description '));
         const counterEl = descLabel.createSpan('description-counter');
         const updateCounter = (len: number) => {
             if (maxLen > 0) {
@@ -305,7 +330,7 @@ export class EntryModal extends Modal {
 
         descSetting.addTextArea((text) => {
             text.setValue(this.descriptionValue);
-            text.setPlaceholder('What did you work on?');
+            text.setPlaceholder(t('What did you work on?'));
             text.inputEl.rows = 3;
 
             text.onChange((value) => {
@@ -321,37 +346,38 @@ export class EntryModal extends Modal {
 
         // Linked note
         const linkedNoteSetting = new Setting(contentEl)
-            .setName('Linked note');
+            .setName(t('Linked note'));
         linkedNoteSetting.settingEl.addClass('at-linked-note');
 
-        let linkedNoteInput: TextComponent;
-        linkedNoteSetting.addText((text) => {
-            linkedNoteInput = text;
-            text.setValue(this.linkedNoteValue);
-            text.setPlaceholder('Enter note path');
-            text.onChange((value) => {
-                this.linkedNoteValue = value;
-            });
+        const linkedNoteInput = this.addEntryField(linkedNoteSetting, 'note', t('Note path'), this.linkedNoteValue, value => {
+            this.linkedNoteValue = value;
         });
+        const noteSuggest = new NotePathSuggest(this.app, linkedNoteInput.inputEl, path => {
+            linkedNoteInput.setValue(path);
+            this.linkedNoteValue = path;
+            this.clearEntryFieldError('note');
+        });
+        this.cleanupHandlers.push(() => noteSuggest.close());
 
         // Browse existing notes button
         linkedNoteSetting.addButton((btn) => {
-            btn.setButtonText('Browse')
-                .setTooltip('Select an existing note')
+            btn.setButtonText(t('Browse'))
+                .setTooltip(t('Select an existing note'))
                 .onClick(() => {
                     new NoteSuggestModal(this.app, (file) => {
                         // Remove .md extension for the link
                         const path = file.path.replace(/\.md$/, '');
                         linkedNoteInput.setValue(path);
                         this.linkedNoteValue = path;
+                        this.clearEntryFieldError('note');
                     }).open();
                 });
         });
 
         // Create new note button
         linkedNoteSetting.addButton((btn) => {
-            btn.setButtonText('Create new')
-                .setTooltip('Create a new linked note')
+            btn.setButtonText(t('Create new'))
+                .setTooltip(t('Create a new linked note'))
                 .onClick(() => {
                     this.showCreateNoteInput(contentEl, linkedNoteInput);
                 });
@@ -363,7 +389,7 @@ export class EntryModal extends Modal {
         // Delete button (only for edit mode)
         if (this.data.mode === 'edit') {
             const deleteBtn = buttonRow.createEl('button', {
-                text: 'Delete',
+                text: t('Delete'),
                 cls: 'mod-warning',
             });
             deleteBtn.addEventListener('click', () => this.handleDelete());
@@ -374,23 +400,24 @@ export class EntryModal extends Modal {
 
         // Cancel button
         const cancelBtn = buttonRow.createEl('button', {
-            text: 'Cancel',
+            text: t('Cancel'),
         });
         cancelBtn.addEventListener('click', () => this.close());
 
         // Save button
         this.saveButton = buttonRow.createEl('button', {
-            text: 'Save',
+            text: t('Save'),
             cls: 'mod-cta',
         });
         this.saveButton.addEventListener('click', () => { void this.handleSave(); });
 
-        // Check for overlaps and find adjacent entries on initial load
-        void this.validateOverlap();
+        // Adjacent entries only provide snap hints; initial values do not show errors.
         void this.findAdjacentEntries();
     }
 
     onClose(): void {
+        ++this.validationRequestId;
+        ++this.fieldRevision;
         // Run cleanup handlers
         this.startTimeInput?.destroy();
         this.endTimeInput?.destroy();
@@ -407,41 +434,17 @@ export class EntryModal extends Modal {
      * Handle save button click
      */
     private async handleSave(): Promise<void> {
-        // Validate the visible controls, including incomplete edits.
-        if (this.startTimeInput) this.startTimeValue = this.startTimeInput.getValue();
-        if (this.endTimeInput) this.endTimeValue = this.endTimeInput.getValue();
-        // Validate required fields
-        if (!this.startDateValue || !this.startTimeValue || !this.endDateValue || !this.endTimeValue) {
-            Logger.error('EntryModal: Missing required fields');
-            return;
-        }
-
-        // Validate date format
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(this.startDateValue) ||
-            !/^\d{4}-\d{2}-\d{2}$/.test(this.endDateValue)) {
-            Logger.error('EntryModal: Invalid date format');
-            return;
-        }
-
-        // Validate end time is after start time (prevents negative durations)
-        const startDateTime = new Date(`${this.startDateValue}T${this.startTimeValue}`);
-        const endDateTime = new Date(`${this.endDateValue}T${this.endTimeValue}`);
-        if (!Number.isFinite(startDateTime.getTime()) || !Number.isFinite(endDateTime.getTime()) || endDateTime <= startDateTime) {
-            new Notice('End time must be after start time');
-            return;
-        }
-
-        // Format start and end with explicit date+time: "YYYY-MM-DD HH:mm"
-        const startForStorage = `${this.startDateValue} ${this.startTimeValue}`;
-        const endForStorage = `${this.endDateValue} ${this.endTimeValue}`;
-
-        Logger.log('Saving entry:', {
-            date: this.startDateValue,
-            start: startForStorage,
-            end: endForStorage
-        });
-
+        if (this.isSaving) return;
+        this.isSaving = true;
+        this.updateSaveButtonState();
+        const revision = this.fieldRevision;
         try {
+            const referencesValid = this.validateEntryFields();
+            const timeValid = await this.validateTimeFields();
+            if (!referencesValid || !timeValid || revision !== this.fieldRevision) return;
+            const startForStorage = `${this.startDateValue} ${this.startTimeValue}`;
+            const endForStorage = `${this.endDateValue} ${this.endTimeValue}`;
+
             if (this.data.mode === 'edit' && this.data.entry) {
                 // Update existing entry
                 await this.dataManager.updateEntry(this.data.entry, {
@@ -472,7 +475,10 @@ export class EntryModal extends Modal {
             this.close();
         } catch (error) {
             Logger.error('EntryModal: Error saving entry:', error);
-            // The DataManager will show a Notice for overlap errors
+            new Notice(t('Failed to save entry: {message}', { message: String(error) }));
+        } finally {
+            this.isSaving = false;
+            this.updateSaveButtonState();
         }
     }
 
@@ -507,28 +513,79 @@ export class EntryModal extends Modal {
             this.close();
         } catch (error) {
             Logger.error('EntryModal: Error deleting entry:', error);
+            new Notice(t('Failed to delete entry: {message}', { message: String(error) }));
         }
     }
 
-    /**
-     * Get current time rounded to nearest 15 minutes
-     */
+    /** Match stored IDs and aliases too, so existing entries survive category renames. */
+    private findCategory(items: Activity[], value: string): Activity | undefined {
+        const normalized = value.trim().toLocaleLowerCase();
+        return items.find(item => [item.name, item.id, ...(item.aliases || [])]
+            .some(name => name.toLocaleLowerCase() === normalized));
+    }
+
+    private addEntryField(setting: Setting, field: EntryField, placeholder: string, value: string,
+        onChange: (value: string) => void): TextComponent {
+        setting.addText(text => {
+            this.fieldInputs[field] = text;
+            text.setValue(value).setPlaceholder(placeholder);
+            const wrapper = setting.controlEl.createDiv('at-entry-field');
+            wrapper.appendChild(text.inputEl);
+            const error = new ValidationMessage(setting.settingEl.parentElement, `${this.fieldPrefix}-${field}-error`);
+            this.fieldErrors[field] = error;
+            text.inputEl.setAttribute('aria-label', placeholder);
+            text.inputEl.setAttribute('aria-describedby', error.element.id);
+            text.inputEl.setAttribute('aria-invalid', 'false');
+            text.onChange(next => {
+                onChange(next);
+                this.clearEntryFieldError(field);
+            });
+            this.cleanupHandlers.push(bindFieldValidation(text.inputEl,
+                () => { this.validateEntryFields([field]); }, () => this.clearEntryFieldError(field)));
+        });
+        return this.fieldInputs[field];
+    }
+
+    private clearEntryFieldError(field: EntryField): void {
+        ++this.fieldRevision;
+        this.fieldInputs[field]?.inputEl.setAttribute('aria-invalid', 'false');
+        this.fieldErrors[field]?.setMessages([]);
+    }
+
+    /** Blur checks one reference; saving checks all references without short-circuiting. */
+    private validateEntryFields(fields: readonly EntryField[] = ['project', 'activity', 'note']): boolean {
+        const messages = { project: t('The specified project does not exist'),
+            activity: t('The specified activity does not exist'), note: t('The specified note does not exist') };
+        let valid = true;
+        for (const field of fields) {
+            const current = field === 'project' ? this.projectValue : field === 'activity' ? this.activityValue : this.linkedNoteValue;
+            let value = (this.fieldInputs[field]?.getValue() ?? current).trim();
+            let exists = true;
+            if (value) {
+                if (field === 'note') {
+                    const path = /\.md$/i.test(value) ? value : `${value}.md`;
+                    exists = this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+                } else {
+                    const category = this.findCategory(field === 'project' ? this.settings.projects : this.settings.activities, value);
+                    exists = category !== undefined;
+                    if (category) value = category.name;
+                }
+            }
+            if (field === 'project') this.projectValue = value;
+            else if (field === 'activity') this.activityValue = value;
+            else this.linkedNoteValue = value;
+            this.fieldInputs[field]?.inputEl.setAttribute('aria-invalid', String(!exists));
+            this.fieldErrors[field]?.setMessages(exists ? [] : [messages[field]]);
+            if (!exists) valid = false;
+        }
+        return valid;
+    }
+
+    /** Match the command palette's quarter-hour default without producing 24:00. */
     private getCurrentTimeRounded(): string {
         const now = new Date();
         const minutes = Math.round(now.getMinutes() / 15) * 15;
-        const hours = now.getHours() + (minutes >= 60 ? 1 : 0);
-        const adjustedMinutes = minutes % 60;
-
-        return `${hours.toString().padStart(2, '0')}:${adjustedMinutes.toString().padStart(2, '0')}`;
-    }
-
-    /**
-     * Add one hour to a time string
-     */
-    private addHourToTime(time: string): string {
-        const [hours, minutes] = time.split(':').map(Number);
-        const newHours = (hours + 1) % 24;
-        return `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        return `${now.getHours().toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
     }
 
     /**
@@ -539,7 +596,7 @@ export class EntryModal extends Modal {
         if (!projectIdOrName) return '';
 
         // First try exact match by name
-        const byName = this.settings.projects.find(p => p.name === projectIdOrName);
+        const byName = this.settings.projects.find(p => p.name === projectIdOrName || p.aliases?.includes(projectIdOrName));
         if (byName) return byName.name;
 
         // Then try match by ID (for old entries with lowercased IDs)
@@ -558,7 +615,7 @@ export class EntryModal extends Modal {
         if (!activityIdOrName) return '';
 
         // First try exact match by name
-        const byName = this.settings.activities.find(a => a.name === activityIdOrName);
+        const byName = this.settings.activities.find(a => a.name === activityIdOrName || a.aliases?.includes(activityIdOrName));
         if (byName) return byName.name;
 
         // Then try match by ID (for lowercased slugs)
@@ -577,111 +634,47 @@ export class EntryModal extends Modal {
         return h * 60 + m;
     }
 
-    /**
-     * Format duration in minutes to "Xh Ym" string
-     */
-    private formatDurationMinutes(minutes: number): string {
-        if (minutes < 0) return '0m';
-        const h = Math.floor(minutes / 60);
-        const m = minutes % 60;
-        if (h === 0) return `${m}m`;
-        if (m === 0) return `${h}h`;
-        return `${h}h ${m}m`;
+    private resetTimeValidation(): void {
+        ++this.fieldRevision;
+        ++this.validationRequestId;
+        this.hasInvalidDuration = false;
+        this.startOverlap = this.endOverlap = this.encompassedEntry = null;
+        this.startTimeInput?.clearValidation();
+        this.endTimeInput?.clearValidation();
+        this.updateOverlapUI();
     }
 
-    /**
-     * Calculate duration from current start/end date+time values
-     */
-    private calculateDurationFromDates(): string {
+    /** Commit the visible values only after blur or a save attempt. */
+    private validateTimeRange(): boolean {
+        this.startDateValue = this.startDateInput?.getValue() ?? this.startDateValue;
+        this.endDateValue = this.endDateInput?.getValue() ?? this.endDateValue;
+        this.startTimeValue = this.startTimeInput?.getValue() ?? this.startTimeValue;
+        this.endTimeValue = this.endTimeInput?.getValue() ?? this.endTimeValue;
         const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
         const end = new Date(`${this.endDateValue}T${this.endTimeValue}`);
-        const diffMs = end.getTime() - start.getTime();
-        const diffMins = Math.round(diffMs / 60000);
-        return this.formatDurationMinutes(diffMins);
+        this.hasInvalidDuration = !/^\d{4}-\d{2}-\d{2}$/.test(this.startDateValue) ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(this.endDateValue) ||
+            !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start;
+        this.startTimeInput?.validate();
+        this.endTimeInput?.validate();
+        this.updateOverlapUI();
+        return !this.hasInvalidDuration;
     }
 
-    /**
-     * Recalculate and update duration display when dates/times change
-     */
-    private recalculateDuration(updateDurationInput = true): void {
-        const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
-        const end = new Date(`${this.endDateValue}T${this.endTimeValue}`);
-        const diffMs = end.getTime() - start.getTime();
-        const diffMins = Math.round(diffMs / 60000);
-
-        // Track invalid duration state
-        this.hasInvalidDuration = !Number.isFinite(diffMins) || diffMins <= 0;
-
-        if (updateDurationInput) {
-            this.durationValue = Number.isFinite(diffMins) ? this.formatDurationMinutes(diffMins) : '';
+    private async validateTimeFields(): Promise<boolean> {
+        this.startOverlap = this.endOverlap = this.encompassedEntry = null;
+        if (!this.validateTimeRange()) {
+            ++this.validationRequestId;
+            return false;
         }
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises -- false positive: null check, not promise
-        if (this.durationInput) {
-            if (updateDurationInput) this.durationInput.setValue(this.durationValue);
-            // Add visual error state for invalid duration
-            this.durationInput.inputEl.toggleClass('time-input-error', this.hasInvalidDuration);
-        }
-
-        // Update save button state
-        this.updateSaveButtonState();
+        return this.validateOverlap();
     }
 
-    /**
-     * Update end date/time based on start + duration
-     */
-    private updateEndFromDuration(): void {
-        const durationMins = this.parseDurationToMinutes(this.durationValue);
-        if (durationMins <= 0) return;
-
-        const start = new Date(`${this.startDateValue}T${this.startTimeValue}`);
-        if (!Number.isFinite(start.getTime())) return;
-        const end = new Date(start.getTime() + durationMins * 60000);
-
-        this.endDateValue = TableParser.getDateString(end);
-        this.endTimeValue = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
-
-        if (this.endDateInput !== null) {
-            this.endDateInput.setValue(this.endDateValue);
-        }
-        if (this.endTimeInput !== null) {
-            this.endTimeInput.setValue(this.endTimeValue);
-        }
-        this.recalculateDuration(false);
-        void this.findAdjacentEntries();
-    }
-
-    /**
-     * Parse duration string to minutes
-     * Accepts: "1h 30m", "1h30m", "90m", "1.5h", "1h", "30m"
-     */
-    private parseDurationToMinutes(duration: string): number {
-        const cleaned = duration.toLowerCase().trim();
-
-        // Try "Xh Ym" or "XhYm" format
-        const hhmm = cleaned.match(/(\d+)\s*h\s*(\d+)\s*m/);
-        if (hhmm) {
-            return parseInt(hhmm[1]) * 60 + parseInt(hhmm[2]);
-        }
-
-        // Try "Xh" format
-        const hOnly = cleaned.match(/^(\d+(?:\.\d+)?)\s*h$/);
-        if (hOnly) {
-            return Math.round(parseFloat(hOnly[1]) * 60);
-        }
-
-        // Try "Xm" format
-        const mOnly = cleaned.match(/^(\d+)\s*m$/);
-        if (mOnly) {
-            return parseInt(mOnly[1]);
-        }
-
-        // Try plain number (assume minutes)
-        const plain = cleaned.match(/^(\d+)$/);
-        if (plain) {
-            return parseInt(plain[1]);
-        }
-
-        return 0;
+    private validateTimeOnBlur(): void {
+        if (this.isSaving) return;
+        void this.validateTimeFields().catch(error => {
+            new Notice(t('Failed to load entries: {message}', { message: String(error) }));
+        });
     }
 
     /**
@@ -708,11 +701,11 @@ export class EntryModal extends Modal {
         counterSpan.setText(`${defaultName.length}/${maxLength}`);
 
         nameInput.addEventListener('input', () => {
-            // Sanitize: only allow lowercase, numbers, hyphens
+            // Allow Unicode letters, numbers, and hyphens in note filenames.
             const cursorPos = nameInput.selectionStart || 0;
             nameInput.value = nameInput.value
                 .toLowerCase()
-                .replace(/[^a-z0-9-]/g, '-')
+                .replace(/[^\p{L}\p{N}-]/gu, '-')
                 .replace(/-+/g, '-');
             nameInput.selectionStart = nameInput.selectionEnd = Math.min(cursorPos, nameInput.value.length);
             counterSpan.setText(`${nameInput.value.length}/${maxLength}`);
@@ -720,29 +713,30 @@ export class EntryModal extends Modal {
 
         // Create button
         const createBtn = createNoteRow.createEl('button', {
-            text: 'Create',
+            text: t('Create'),
             cls: 'mod-cta',
         });
 
         // Cancel button
         const cancelBtn = createNoteRow.createEl('button', {
-            text: 'Cancel',
+            text: t('Cancel'),
         });
 
         createBtn.addEventListener('click', () => {
             const noteName = nameInput.value.trim().replace(/^-+|-+$/g, '');
             if (!noteName) {
-                new Notice('Please enter a note name');
+                new Notice(t('Please enter a note name'));
                 return;
             }
 
             void this.createLinkedNote(noteName).then((notePath) => {
                 linkedNoteInput.setValue(notePath);
                 this.linkedNoteValue = notePath;
+                this.clearEntryFieldError('note');
                 createNoteRow.remove();
-                new Notice('Note created!');
+                new Notice(t('Note created!'));
             }).catch((err: Error) => {
-                new Notice(`Failed to create note: ${err.message}`);
+                new Notice(t('Failed to create note: {message}', { message: err.message }));
             });
         });
 
@@ -772,7 +766,7 @@ export class EntryModal extends Modal {
         // Check if note already exists
         const existing = vault.getAbstractFileByPath(notePath);
         if (existing) {
-            throw new Error('Note already exists');
+            throw new Error(t('Note already exists'));
         }
 
         // Create note with template content
@@ -793,80 +787,10 @@ export class EntryModal extends Modal {
     }
 
     /**
-     * Populate project dropdown with projects for the selected client
-     */
-    private populateProjectDropdown(dropdown: DropdownComponent): void {
-        // Clear existing options
-        dropdown.selectEl.empty();
-
-        // Add empty option
-        dropdown.addOption('', 'No project');
-
-        // Add projects belonging to the selected client
-        for (const project of this.settings.projects) {
-            if (!project.archived) {
-                dropdown.addOption(project.name, project.name);
-            }
-        }
-    }
-
-    /**
-     * Update project dropdown when client changes
-     */
-    private updateProjectDropdown(): void {
-        if (this.projectDropdown === null) return;
-
-        this.populateProjectDropdown(this.projectDropdown);
-
-        // Reset selection if current project doesn't belong to new client
-        const currentProject = this.settings.projects.find(
-            p => p.name === this.projectValue
-        );
-        if (!currentProject) {
-            this.projectValue = '';
-        }
-        this.projectDropdown.setValue(this.projectValue);
-    }
-
-    /**
-     * Populate activity dropdown with activities for the selected client
-     */
-    private populateActivityDropdown(dropdown: DropdownComponent): void {
-        // Clear existing options
-        dropdown.selectEl.empty();
-
-        // Add empty option
-        dropdown.addOption('', 'No activity');
-
-        // Add activities belonging to the selected client
-        for (const activity of this.settings.activities) {
-            dropdown.addOption(activity.name, activity.name);
-        }
-    }
-
-    /**
-     * Update activity dropdown when client changes
-     */
-    private updateActivityDropdown(): void {
-        if (this.activityDropdown === null) return;
-
-        this.populateActivityDropdown(this.activityDropdown);
-
-        // Reset selection if current activity doesn't belong to new client
-        const currentActivity = this.settings.activities.find(
-            a => a.name === this.activityValue
-        );
-        if (!currentActivity) {
-            this.activityValue = '';
-        }
-        this.activityDropdown.setValue(this.activityValue);
-    }
-
-    /**
      * Validate overlap with existing entries and update UI
      * Uses request ID to prevent race conditions from concurrent async calls
      */
-    private async validateOverlap(): Promise<void> {
+    private async validateOverlap(): Promise<boolean> {
         // Increment and capture request ID to handle race conditions
         const requestId = ++this.validationRequestId;
 
@@ -884,12 +808,12 @@ export class EntryModal extends Modal {
         if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
             Logger.log('EntryModal: Invalid dates, skipping overlap check');
             // Only update if this is still the latest request
-            if (requestId !== this.validationRequestId) return;
+            if (requestId !== this.validationRequestId) return false;
             this.startOverlap = null;
             this.endOverlap = null;
             this.encompassedEntry = null;
             this.updateOverlapUI();
-            return;
+            return false;
         }
 
         Logger.log('EntryModal: Checking conflicts for', {
@@ -907,7 +831,7 @@ export class EntryModal extends Modal {
         // Race condition guard: only apply results if this is still the latest request
         if (requestId !== this.validationRequestId) {
             Logger.log('EntryModal: Discarding stale validation result', { requestId, currentId: this.validationRequestId });
-            return;
+            return false;
         }
 
         this.startOverlap = result.startOverlap;
@@ -922,6 +846,7 @@ export class EntryModal extends Modal {
             ? `${this.encompassedEntry.start} - ${this.encompassedEntry.end}` : 'null');
 
         this.updateOverlapUI();
+        return !this.startOverlap && !this.endOverlap && !this.encompassedEntry;
     }
 
     /**
@@ -931,10 +856,9 @@ export class EntryModal extends Modal {
         const hasStartOverlap = this.startOverlap !== null;
         const hasEndOverlap = this.endOverlap !== null;
         const hasEncompassed = this.encompassedEntry !== null;
-        const hasAnyConflict = hasStartOverlap || hasEndOverlap || hasEncompassed;
         const durationWarning = !this.startTimeValue || !this.endTimeValue || !this.startDateValue || !this.endDateValue
-            ? 'Enter a valid start and end date/time'
-            : 'End time must be after start time';
+            ? t('Enter a valid start and end date/time')
+            : t('End time must be after start time');
 
         // Red border on start inputs if start is inside an entry
         if (this.startDateInput?.inputEl) {
@@ -952,61 +876,27 @@ export class EntryModal extends Modal {
             this.endTimeInput.inputEl.toggleClass('time-input-error', hasEndOverlap);
         }
 
-        // Update warning banner
-        if (this.warningBanner) {
-            if (hasAnyConflict) {
-                this.warningBanner.removeClass('is-hidden');
-                this.warningBanner.empty();
-
-                const icon = this.warningBanner.createSpan('overlap-warning-icon');
-                icon.setText('⚠️');
-
-                const textContainer = this.warningBanner.createDiv('overlap-warning-messages');
-
-                // Show start overlap (START is inside this entry)
-                if (hasStartOverlap) {
-                    const entry = this.startOverlap;
-                    const entryLabel = this.formatEntryLabel(entry);
-                    const msg = textContainer.createDiv('overlap-message');
-                    msg.setText(`Start overlaps with ${entryLabel} (${entry.start} – ${entry.end})`);
-                }
-
-                // Show end overlap (END is inside this entry)
-                if (hasEndOverlap) {
-                    const entry = this.endOverlap;
-                    const entryLabel = this.formatEntryLabel(entry);
-                    const msg = textContainer.createDiv('overlap-message');
-                    msg.setText(`End overlaps with ${entryLabel} (${entry.start} – ${entry.end})`);
-                }
-
-                // Show encompassed entry (we fully contain this entry)
-                if (hasEncompassed) {
-                    const entry = this.encompassedEntry;
-                    const entryLabel = this.formatEntryLabel(entry);
-                    const msg = textContainer.createDiv('overlap-message');
-                    msg.setText(`Conflicts with ${entryLabel} (${entry.start} – ${entry.end})`);
-                }
-
-                // Show invalid duration warning
-                if (this.hasInvalidDuration) {
-                    const msg = textContainer.createDiv('overlap-message');
-                    msg.setText(durationWarning);
-                }
-            } else if (this.hasInvalidDuration) {
-                // Show only duration warning
-                this.warningBanner.removeClass('is-hidden');
-                this.warningBanner.empty();
-
-                const icon = this.warningBanner.createSpan('overlap-warning-icon');
-                icon.setText('⚠️');
-
-                const textContainer = this.warningBanner.createDiv('overlap-warning-messages');
-                const msg = textContainer.createDiv('overlap-message');
-                msg.setText(durationWarning);
-            } else {
-                this.warningBanner.addClass('is-hidden');
-            }
+        const messages: string[] = [];
+        if (hasStartOverlap) {
+            const entry = this.startOverlap;
+            messages.push(t('Start overlaps with {label} ({start} – {end})', {
+                label: this.formatEntryLabel(entry), start: entry.start, end: entry.end,
+            }));
         }
+        if (hasEndOverlap) {
+            const entry = this.endOverlap;
+            messages.push(t('End overlaps with {label} ({start} – {end})', {
+                label: this.formatEntryLabel(entry), start: entry.start, end: entry.end,
+            }));
+        }
+        if (hasEncompassed) {
+            const entry = this.encompassedEntry;
+            messages.push(t('Conflicts with {label} ({start} – {end})', {
+                label: this.formatEntryLabel(entry), start: entry.start, end: entry.end,
+            }));
+        }
+        if (this.hasInvalidDuration) messages.push(durationWarning);
+        this.warningBanner?.setMessages(messages);
 
         // Update save button state
         this.updateSaveButtonState();
@@ -1016,48 +906,30 @@ export class EntryModal extends Modal {
      * Update save button enabled/disabled state based on all validation
      */
     private updateSaveButtonState(): void {
-        const hasAnyConflict = this.startOverlap !== null ||
-            this.endOverlap !== null ||
-            this.encompassedEntry !== null;
-        const hasInvalidTime = (this.startTimeInput !== null && !this.startTimeInput.getValue()) ||
-            (this.endTimeInput !== null && !this.endTimeInput.getValue());
-        const cannotSave = hasAnyConflict || this.hasInvalidDuration || hasInvalidTime;
-
         if (this.saveButton) {
-            this.saveButton.disabled = cannotSave;
-            this.saveButton.toggleClass('is-disabled', cannotSave);
+            this.saveButton.disabled = this.isSaving;
+            this.saveButton.toggleClass('is-disabled', this.isSaving);
         }
     }
 
     /**
-     * Get client display name from client ID
-     */
-    private getClientName(clientId: string): string {
-        const client = this.settings.clients.find(c => c.id === clientId);
-        return client?.name || clientId;
-    }
-
-    /**
-     * Format entry label as CLIENT > PROJECT > ACTIVITY
+     * Format a label for conflict warnings and time snapping
      */
     private formatEntryLabel(entry: TimeEntry): string {
         const parts: string[] = [];
 
-        // Client (always present)
-        const clientName = this.getClientName(entry.client);
-        parts.push(clientName);
 
         // Project (if present)
         if (entry.project) {
-            parts.push(entry.project);
+            parts.push(this.resolveProjectName(entry.project));
         }
 
         // Activity (if present)
         if (entry.activity) {
-            parts.push(entry.activity);
+            parts.push(this.resolveActivityName(entry.activity));
         }
 
-        return parts.join(' > ');
+        return parts.join(' > ') || entry.description || t('(No description)');
     }
     /**
      * Check if two entries are same (helper for filtering)
@@ -1101,8 +973,8 @@ export class EntryModal extends Modal {
             if (this.previousEntry) {
                 this.startSnapHint.removeClass('is-hidden');
                 const prevEnd = this.previousEntry.end;
-                const prevClient = this.getClientName(this.previousEntry.client);
-                this.startSnapHint.setAttribute('aria-label', `Snap to ${prevEnd} (end of ${prevClient})`);
+                const previousLabel = this.formatEntryLabel(this.previousEntry);
+                this.startSnapHint.setAttribute('aria-label', t('Snap to {time} (end of {label})', { time: prevEnd, label: previousLabel }));
             } else {
                 this.startSnapHint.addClass('is-hidden');
             }
@@ -1113,8 +985,8 @@ export class EntryModal extends Modal {
             if (this.nextEntry) {
                 this.endSnapHint.removeClass('is-hidden');
                 const nextStart = this.nextEntry.start;
-                const nextClient = this.getClientName(this.nextEntry.client);
-                this.endSnapHint.setAttribute('aria-label', `Snap to ${nextStart} (start of ${nextClient})`);
+                const nextLabel = this.formatEntryLabel(this.nextEntry);
+                this.endSnapHint.setAttribute('aria-label', t('Snap to {time} (start of {label})', { time: nextStart, label: nextLabel }));
             } else {
                 this.endSnapHint.addClass('is-hidden');
             }
@@ -1138,8 +1010,7 @@ export class EntryModal extends Modal {
             this.startTimeInput.setValue(this.startTimeValue);
         }
 
-        this.recalculateDuration();
-        void this.validateOverlap();
+        this.resetTimeValidation();
         void this.findAdjacentEntries();
     }
 
@@ -1160,8 +1031,7 @@ export class EntryModal extends Modal {
             this.endTimeInput.setValue(this.endTimeValue);
         }
 
-        this.recalculateDuration();
-        void this.validateOverlap();
+        this.resetTimeValidation();
         void this.findAdjacentEntries();
     }
 }
@@ -1175,7 +1045,7 @@ class NoteSuggestModal extends FuzzySuggestModal<TFile> {
     constructor(app: App, onSelect: (file: TFile) => void) {
         super(app);
         this.onSelect = onSelect;
-        this.setPlaceholder('Search for a note...');
+        this.setPlaceholder(t('Search for a note...'));
     }
 
     getItems(): TFile[] {
