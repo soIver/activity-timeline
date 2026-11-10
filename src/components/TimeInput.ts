@@ -149,23 +149,32 @@ export class TimeInput {
         input.setAttribute('aria-label', label);
         input.setAttribute('aria-valuemin', String(min));
         input.setAttribute('aria-valuemax', String(max));
-        input.title = `${label} (${min}–${max}). Use up/down arrows to adjust.`;
+        input.title = t('{label} ({min}–{max}). Use up/down arrows or the mouse wheel to adjust.', { label, min, max });
         input.addEventListener('focus', () => input.select());
         input.addEventListener('input', () => this.notifyChange());
         input.addEventListener('blur', () => {
             const value = this.readSegment(input);
             if (value !== null) input.value = String(value).padStart(2, '0');
         });
+        const adjust = (direction: number) => {
+            const current = this.readSegment(input);
+            const next = current === null ? (direction > 0 ? min : max)
+                : min + (current - min + direction + max - min + 1) % (max - min + 1);
+            input.value = String(next).padStart(2, '0');
+            this.notifyChange();
+        };
         input.addEventListener('keydown', (event) => {
             if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
             event.preventDefault();
-            const current = this.readSegment(input);
-            const next = current === null ? (event.key === 'ArrowUp' ? min : max)
-                : min + (current - min + (event.key === 'ArrowUp' ? 1 : -1) + max - min + 1) % (max - min + 1);
-            input.value = String(next).padStart(2, '0');
+            adjust(event.key === 'ArrowUp' ? 1 : -1);
             input.select();
-            this.notifyChange();
         });
+        input.addEventListener('wheel', (event) => {
+            if (event.ctrlKey || event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            adjust(event.deltaY < 0 ? 1 : -1);
+        }, { passive: false });
         return input;
     }
 

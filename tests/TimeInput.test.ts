@@ -269,6 +269,52 @@ describe('TimeInput', () => {
         expect(control.getValue()).toBe('12:15');
     });
 
+    it('adjusts hovered hours and minutes with the wheel and consumes scrolling', () => {
+        const { hours, minutes, control, container, onChange } = setup(true, '23:59');
+        const parentWheel = jest.fn();
+        container.addEventListener('wheel', parentWheel);
+        const wheel = (input: HTMLInputElement, deltaY: number) => {
+            const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true });
+            input.dispatchEvent(event);
+            expect(event.defaultPrevented).toBe(true);
+        };
+        wheel(hours, -100);
+        expect(control.getValue()).toBe('00:59');
+        wheel(hours, 100);
+        wheel(minutes, -100);
+        expect(control.getValue()).toBe('23:00');
+        wheel(minutes, 100);
+        expect(control.getValue()).toBe('23:59');
+        expect(minutes.getAttribute('aria-valuenow')).toBe('59');
+        expect(onChange).toHaveBeenCalledTimes(4);
+        expect(parentWheel).not.toHaveBeenCalled();
+        expect(document.activeElement).not.toBe(hours);
+        expect(document.activeElement).not.toBe(minutes);
+    });
+
+    it('keeps the period when scrolling 12-hour hours and repairs incomplete minutes', () => {
+        const { hours, minutes, control } = setup(false, '12:15');
+        hours.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, cancelable: true }));
+        expect(control.getValue()).toBe('13:15');
+        hours.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, cancelable: true }));
+        expect(control.getValue()).toBe('12:15');
+        type(minutes, '');
+        minutes.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, cancelable: true }));
+        expect(control.getValue()).toBe('12:59');
+        expect(minutes.getAttribute('aria-invalid')).toBe('false');
+    });
+
+    it('leaves horizontal scrolling and zoom gestures alone', () => {
+        const { hours, control, onChange } = setup();
+        for (const options of [{ deltaX: 100 }, { deltaX: 100, deltaY: 1 }, { deltaY: -100, ctrlKey: true }]) {
+            const event = new WheelEvent('wheel', { ...options, bubbles: true, cancelable: true });
+            hours.dispatchEvent(event);
+            expect(event.defaultPrevented).toBe(false);
+        }
+        expect(control.getValue()).toBe('19:15');
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('moves to minutes with colon and selects the segment for replacement', () => {
         const { hours, minutes } = setup();
         hours.focus();
