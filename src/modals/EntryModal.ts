@@ -172,10 +172,11 @@ export class EntryModal extends Modal {
                 }
                 this.endTimeValue = data.endTime;
             } else {
-                // Default +1 hour
-                this.endDateValue = this.startDateValue;
-                const minutes = this.timeToMinutes(this.startTimeValue) + 60;
-                this.endTimeValue = `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+                // Compute a full local datetime so midnight also advances the calendar date.
+                const end = new Date(`${this.startDateValue}T${this.startTimeValue}`);
+                end.setMinutes(end.getMinutes() + 60);
+                this.endDateValue = TableParser.getDateString(end);
+                this.endTimeValue = TableParser.formatTime(end);
             }
 
             this.descriptionValue = '';
@@ -584,7 +585,7 @@ export class EntryModal extends Modal {
     /** Match the command palette's quarter-hour default without producing 24:00. */
     private getCurrentTimeRounded(): string {
         const now = new Date();
-        const minutes = Math.round(now.getMinutes() / 15) * 15;
+        const minutes = Math.floor(now.getMinutes() / 15) * 15;
         return `${now.getHours().toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
     }
 

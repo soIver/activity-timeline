@@ -119,6 +119,21 @@ describe('Entry references with native input suggestions', () => {
     });
 });
 
+describe('One-hour default across calendar boundaries', () => {
+    it.each([
+        [new Date(2026, 9, 9), '23:30', '2026-10-10 00:30'],
+        [new Date(2026, 9, 9), '23:00', '2026-10-10 00:00'],
+        [new Date(2026, 9, 9), '22:45', '2026-10-09 23:45'],
+        [new Date(2026, 9, 31), '23:30', '2026-11-01 00:30'],
+        [new Date(2026, 11, 31), '23:30', '2027-01-01 00:30'],
+        [new Date(2028, 1, 28), '23:30', '2028-02-29 00:30'],
+    ])('advances from %s %s to %s independently of the configured day start', async (date, startTime, end) => {
+        const { modal, createEntry } = setup({ date, startTime });
+        await modal['handleSave']();
+        expect(createEntry).toHaveBeenCalledWith(expect.objectContaining({ end }));
+    });
+});
+
 const flushValidation = () => new Promise<void>(resolve => setImmediate(resolve));
 
 describe('Unified validation timing', () => {
