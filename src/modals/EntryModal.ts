@@ -1,3 +1,4 @@
+import { setModalTitle } from './ModalLayout';
 import { App, Modal, Setting, DropdownComponent, TextComponent, Notice, FuzzySuggestModal, TFile } from 'obsidian';
 import { TimeEntry, TimeTrackerSettings } from '../types';
 import { DataManager } from '../data/DataManager';
@@ -168,9 +169,8 @@ export class EntryModal extends Modal {
 
             this.durationValue = this.calculateDurationFromDates();
             this.descriptionValue = '';
-            // Default to first active client
-            const activeClients = this.settings.clients.filter(c => !c.archived);
-            this.clientValue = activeClients.length > 0 ? activeClients[0].id : '';
+            // Preserve legacy storage metadata for personal entries.
+            this.clientValue = 'personal';
             this.projectValue = this.resolveProjectName(this.settings.defaultProject);
             this.activityValue = this.resolveActivityName(this.settings.defaultActivity);
             this.linkedNoteValue = '';
@@ -184,10 +184,11 @@ export class EntryModal extends Modal {
 
         // Title
         const title = this.data.mode === 'edit' ? 'Edit Time Entry' : 'New Time Entry';
-        contentEl.createEl('h2', { text: title });
+        setModalTitle(this, title);
+        const interval = contentEl.createDiv('at-entry-range');
 
         // Start row: Date and Time with magnet button
-        const startRow = contentEl.createDiv('time-row');
+        const startRow = interval.createDiv('time-row');
 
         const startSetting = new Setting(startRow)
             .setName('Start')
@@ -221,23 +222,8 @@ export class EntryModal extends Modal {
             this.snapStartToPrevious();
         });
 
-        // Duration row (between start and end)
-        new Setting(contentEl)
-            .setName('Duration')
-            .addText((text) => {
-                this.durationInput = text;
-                text.setValue(this.durationValue);
-                text.setPlaceholder('1h 30m');
-                text.inputEl.addClass('duration-input');
-                text.onChange((value) => {
-                    this.durationValue = value;
-                    this.updateEndFromDuration();
-                    void this.validateOverlap();
-                });
-            });
-
         // End row: Date and Time with magnet button
-        const endRow = contentEl.createDiv('time-row');
+        const endRow = interval.createDiv('time-row');
 
         const endSetting = new Setting(endRow)
             .setName('End')
@@ -275,23 +261,6 @@ export class EntryModal extends Modal {
         this.warningBanner = contentEl.createDiv('overlap-warning-banner');
         this.warningBanner.addClass('is-hidden');
 
-        // Client dropdown (required)
-        new Setting(contentEl)
-            .setName('Client')
-            .addDropdown((dropdown) => {
-                for (const client of this.settings.clients) {
-                    if (!client.archived) {
-                        dropdown.addOption(client.id, client.name);
-                    }
-                }
-                dropdown.setValue(this.clientValue);
-                dropdown.onChange((value) => {
-                    this.clientValue = value;
-                    this.updateProjectDropdown();
-                    this.updateActivityDropdown();
-                });
-            });
-
         // Project dropdown
         new Setting(contentEl)
             .setName('Project')
@@ -319,6 +288,7 @@ export class EntryModal extends Modal {
         // Description with character counter in label
         const maxLen = this.settings.descriptionMaxLength;
         const descSetting = new Setting(contentEl);
+        descSetting.settingEl.addClass('at-entry-description');
 
         // Create label with counter
         const descLabel = descSetting.nameEl;
@@ -352,6 +322,7 @@ export class EntryModal extends Modal {
         // Linked note
         const linkedNoteSetting = new Setting(contentEl)
             .setName('Linked note');
+        linkedNoteSetting.settingEl.addClass('at-linked-note');
 
         let linkedNoteInput: TextComponent;
         linkedNoteSetting.addText((text) => {
@@ -442,12 +413,6 @@ export class EntryModal extends Modal {
         // Validate required fields
         if (!this.startDateValue || !this.startTimeValue || !this.endDateValue || !this.endTimeValue) {
             Logger.error('EntryModal: Missing required fields');
-            return;
-        }
-
-        // Validate client is selected
-        if (!this.clientValue) {
-            new Notice('Please select a client');
             return;
         }
 
@@ -839,7 +804,7 @@ export class EntryModal extends Modal {
 
         // Add projects belonging to the selected client
         for (const project of this.settings.projects) {
-            if (!project.archived && project.clientId === this.clientValue) {
+            if (!project.archived) {
                 dropdown.addOption(project.name, project.name);
             }
         }
@@ -855,7 +820,7 @@ export class EntryModal extends Modal {
 
         // Reset selection if current project doesn't belong to new client
         const currentProject = this.settings.projects.find(
-            p => p.name === this.projectValue && p.clientId === this.clientValue
+            p => p.name === this.projectValue
         );
         if (!currentProject) {
             this.projectValue = '';
@@ -875,9 +840,7 @@ export class EntryModal extends Modal {
 
         // Add activities belonging to the selected client
         for (const activity of this.settings.activities) {
-            if (activity.clientId === this.clientValue) {
-                dropdown.addOption(activity.name, activity.name);
-            }
+            dropdown.addOption(activity.name, activity.name);
         }
     }
 
@@ -891,7 +854,7 @@ export class EntryModal extends Modal {
 
         // Reset selection if current activity doesn't belong to new client
         const currentActivity = this.settings.activities.find(
-            a => a.name === this.activityValue && a.clientId === this.clientValue
+            a => a.name === this.activityValue
         );
         if (!currentActivity) {
             this.activityValue = '';

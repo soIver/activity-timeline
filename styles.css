@@ -635,22 +635,21 @@
 
 /* Entry Modal Styles - Compact Layout */
 .time-tracker-entry-modal {
-    padding: 16px;
-}
-
-.time-tracker-entry-modal h2 {
-    margin: 0 0 12px 0;
-    font-size: 1.1em;
-    color: var(--text-normal);
+    padding: 0;
 }
 
 .time-tracker-entry-modal .setting-item {
+    display: grid;
+    grid-template-columns: 90px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 16px;
     border-top: none;
-    padding: 4px 0;
+    padding: 8px 0;
 }
 
 .time-tracker-entry-modal .setting-item-info {
-    flex: 0 0 90px;
+    margin: 0;
+    min-width: 0;
 }
 
 .time-tracker-entry-modal .setting-item-name {
@@ -658,17 +657,25 @@
 }
 
 .time-tracker-entry-modal .setting-item-control {
-    flex: 1;
+    justify-content: flex-start;
+    min-width: 0;
     gap: 8px;
 }
 
 /* Time row - date and time inputs on same line */
+.time-tracker-entry-modal .at-entry-range {
+    display: grid;
+    gap: 12px;
+    padding-block: 4px 16px;
+    margin-bottom: 8px;
+}
+
 .time-tracker-entry-modal .time-row {
     display: block;
 }
 
 .time-tracker-entry-modal .time-row .setting-item {
-    display: flex;
+    padding: 0;
 }
 
 .time-tracker-entry-modal .time-row .setting-item-control {
@@ -688,11 +695,7 @@
     min-width: max-content;
 }
 
-.time-tracker-entry-modal .duration-input {
-    text-align: center;
-    font-family: var(--font-monospace);
-    font-weight: 500;
-}
+
 
 .time-tracker-entry-modal .time-picker {
     position: relative;
@@ -826,8 +829,11 @@
     margin-top: 8px;
 }
 
-.time-tracker-entry-modal textarea {
+.time-tracker-entry-modal .at-entry-description textarea {
     width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     resize: vertical;
 }
 
@@ -925,7 +931,7 @@
     box-shadow: 0 0 0 1px var(--text-error);
 }
 
-/* Overlap warning banner */
+/* Shared validation message banner */
 .overlap-warning-banner {
     display: flex;
     align-items: flex-start;
@@ -1000,12 +1006,8 @@
 
 /* Entry Modal - Mobile responsive */
 @media (max-width: 500px) {
-    .time-tracker-entry-modal {
-        padding: 12px;
-    }
-
     .time-tracker-entry-modal .setting-item {
-        flex-direction: column;
+        grid-template-columns: minmax(0, 1fr);
         align-items: stretch;
         gap: 4px;
     }
@@ -1060,11 +1062,6 @@
 
     .time-tracker-entry-modal .button-spacer {
         display: none;
-    }
-
-    .time-tracker-entry-modal h2 {
-        font-size: 1.2em;
-        margin-bottom: 16px;
     }
 
     /* Overlap warning on mobile */
@@ -2087,7 +2084,7 @@
     border-color: #b91c1c;
 }
 
-/* Activity Timeline: category dialogs and embedded color palette. */
+/* Activity Timeline: embedded palette and accessible card actions. */
 .modal.at-modal {
     --at-modal-inset: 16px;
     --at-close-size: 32px;
@@ -2126,6 +2123,22 @@
     min-height: 0;
 }
 
+.time-tracker-entry-modal .at-category-setting .setting-item-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.time-tracker-entry-modal .at-linked-note .setting-item-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.time-tracker-entry-modal .at-linked-note input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
 .at-modal button:not(:disabled),
 .at-modal .modal-close-button,
 .time-tracker-timeline button:not(:disabled),
@@ -2136,6 +2149,27 @@
 
 .at-modal button:disabled {
     cursor: not-allowed;
+}
+
+@media (max-width: 500px) {
+    .time-tracker-entry-modal .at-linked-note .setting-item-control {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .time-tracker-entry-modal .at-linked-note .at-entry-field {
+        grid-column: 1 / -1;
+    }
+}
+
+.time-tracker-entry-modal .at-category-setting input,
+.time-tracker-entry-modal .at-category-setting button {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 input.at-category-name {
@@ -2172,3 +2206,25 @@ input.at-category-name {
 .at-color-values input[type="text"] { width: 100px; }
 .at-color-preview { width: 32px; height: 32px; border: 1px solid var(--background-modifier-border); border-radius: 4px; }
 .at-category-color { display: inline-block; width: 12px; height: 12px; margin-inline-start: 8px; border-radius: 50%; }
+
+
+.time-tracker-entry-modal .at-entry-field {
+    min-width: 0;
+    width: 100%;
+}
+
+.time-tracker-entry-modal .at-entry-field input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.time-tracker-entry-modal .at-category-setting .setting-item-control,
+.time-tracker-entry-modal .at-linked-note .setting-item-control {
+    align-items: start;
+}
+
+.time-tracker-entry-modal .at-entry-field input[aria-invalid="true"] {
+    border-color: var(--text-error);
+    background: color-mix(in srgb, var(--text-error) 8%, var(--background-primary));
+}
