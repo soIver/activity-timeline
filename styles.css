@@ -2206,6 +2206,19 @@ input.at-category-name {
 .at-color-values input[type="text"] { width: 100px; }
 .at-color-preview { width: 32px; height: 32px; border: 1px solid var(--background-modifier-border); border-radius: 4px; }
 .at-category-color { display: inline-block; width: 12px; height: 12px; margin-inline-start: 8px; border-radius: 50%; }
+.timeline-entry-card button.entry-icon {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 3px;
+    min-width: 24px;
+    height: 24px;
+    position: relative;
+    z-index: 4;
+    touch-action: manipulation;
+}
+.timeline-entry-card button.entry-icon:focus-visible { outline: 2px solid var(--interactive-accent); }
+.timeline-header-controls { flex-wrap: wrap; }
 
 
 .time-tracker-entry-modal .at-entry-field {

@@ -1,12 +1,13 @@
 import { jest } from '@jest/globals';
 import { JSDOM } from 'jsdom';
-import { App } from 'obsidian';
+import { App, WorkspaceLeaf } from 'obsidian';
 import { ColorPalette, hsvToHex, rgbToHsv } from '../src/components/ColorPalette';
 import { ActivityModal, ActivityManagerModal } from '../src/modals/ActivityModal';
 import { NotePathSuggest } from '../src/components/NotePathSuggest';
 import { EntryModal } from '../src/modals/EntryModal';
+import { TimelineView } from '../src/views/TimelineView';
 import { DataManager } from '../src/data/DataManager';
-import { DEFAULT_SETTINGS } from '../src/types';
+import { DEFAULT_SETTINGS, TimeEntry } from '../src/types';
 import { configureLanguage } from '../src/i18n';
 import { installElementHelpers, installObsidianDomHelpers } from './__mocks__/obsidianDom';
 
@@ -170,5 +171,31 @@ describe('Entry form and timeline actions', () => {
         } finally {
             open.mockRestore(); modal.onClose();
         }
+    });
+    it.each([15, 30, 60])('opens edit/delete from SVG targets without starting drag (%s minute entry)', minutes => {
+        const { dom, doc, settings } = setup();
+        const view = new TimelineView({} as WorkspaceLeaf, settings, {} as DataManager);
+        view['entriesContainer'] = doc.body;
+        const edit = jest.fn();
+        const remove = jest.fn();
+        const drag = jest.fn();
+        view['openEditModal'] = edit;
+        view['confirmDeleteEntry'] = remove;
+        view['startEntryDrag'] = drag;
+        const entry: TimeEntry = { date: '2026-11-09', start: '09:00', end: '10:00', description: 'Read', client: 'old-client',
+            durationMinutes: minutes, lineNumber: 1, startDateTime: new Date(2026, 10, 9, 9), endDateTime: new Date(2026, 10, 9, 10) };
+        view['renderEntryCard'](entry, 0);
+        const editButton = doc.querySelector<HTMLButtonElement>('[aria-label="Edit entry"]')!;
+        const deleteButton = doc.querySelector<HTMLButtonElement>('[aria-label="Delete entry"]')!;
+        for (const button of [editButton, deleteButton]) {
+            expect(button.tagName).toBe('BUTTON'); expect(button.type).toBe('button');
+            const target = button.querySelector('path')!;
+            target.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true }));
+            target.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+            target.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        }
+        expect(edit).toHaveBeenCalledWith(entry); expect(remove).toHaveBeenCalledWith(entry);
+        expect(drag).not.toHaveBeenCalled();
+        expect(doc.body.textContent).not.toContain('old-client');
     });
 });

@@ -624,11 +624,17 @@ export class TimelineView extends ItemView {
         // Icons (right side of header)
         const icons = header.createDiv('entry-header-icons');
 
+        // Keep pointer initiation inside the controls, away from drag selection.
+        for (const event of ['pointerdown', 'mousedown', 'touchstart', 'dblclick']) {
+            icons.addEventListener(event, e => e.stopPropagation());
+        }
+
         // Linked note icon (paperclip)
         if (entry.linkedNote) {
-            const noteIcon = icons.createSpan('entry-icon');
+            const noteIcon = icons.createEl('button', { cls: 'entry-icon', type: 'button' });
             setIcon(noteIcon, 'paperclip');
             noteIcon.setAttribute('title', t('Open: {name}', { name: entry.linkedNote }));
+            noteIcon.setAttribute('aria-label', t('Open: {name}', { name: entry.linkedNote }));
             noteIcon.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.openLinkedNote(entry.linkedNote);
@@ -636,18 +642,20 @@ export class TimelineView extends ItemView {
         }
 
         // Edit icon (pencil)
-        const editIcon = icons.createSpan('entry-icon');
+        const editIcon = icons.createEl('button', { cls: 'entry-icon', type: 'button' });
         setIcon(editIcon, 'pencil');
         editIcon.setAttribute('title', t('Edit entry'));
+        editIcon.setAttribute('aria-label', t('Edit entry'));
         editIcon.addEventListener('click', (e) => {
             e.stopPropagation();
             this.openEditModal(entry);
         });
 
         // Delete icon (trash)
-        const deleteIcon = icons.createSpan('entry-icon entry-icon-delete');
+        const deleteIcon = icons.createEl('button', { cls: 'entry-icon entry-icon-delete', type: 'button' });
         setIcon(deleteIcon, 'trash-2');
         deleteIcon.setAttribute('title', t('Delete entry'));
+        deleteIcon.setAttribute('aria-label', t('Delete entry'));
         deleteIcon.addEventListener('click', (e) => {
             e.stopPropagation();
             this.confirmDeleteEntry(entry);
