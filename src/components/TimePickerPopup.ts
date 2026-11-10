@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 interface TimePickerColumn {
     label: string;
     values: string[];
@@ -21,7 +22,7 @@ export class TimePickerPopup {
         this.element = anchor.parentElement.createDiv('time-picker-popup');
         this.element.id = anchor.getAttribute('aria-controls')!;
         this.element.setAttribute('role', 'dialog');
-        this.element.setAttribute('aria-label', `Choose ${label.toLowerCase()} time`);
+        this.element.setAttribute('aria-label', t('Choose {label} time', { label: label.toLowerCase() }));
 
         const choices = this.element.createDiv('time-picker-columns');
         columns.forEach((column, columnIndex) => {
@@ -74,7 +75,7 @@ export class TimePickerPopup {
         const done = this.element.createEl('button');
         done.type = 'button';
         done.className = 'time-picker-done';
-        done.textContent = 'Done';
+        done.textContent = t('Done');
         done.addEventListener('click', () => this.close(true));
 
         // Top-layer presentation avoids clipping by the entry modal's scroll container.

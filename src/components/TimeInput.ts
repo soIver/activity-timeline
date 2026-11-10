@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { TimePickerPopup } from './TimePickerPopup';
 
 /** A locale-independent time control. Values crossing its boundary are always HH:mm. */
@@ -19,18 +20,18 @@ export class TimeInput {
     ) {
         this.inputEl = container.createDiv('time-picker');
         this.inputEl.setAttribute('role', 'group');
-        this.inputEl.setAttribute('aria-label', `${label} time`);
+        this.inputEl.setAttribute('aria-label', t('{label} time', { label }));
 
-        this.hours = this.createSegment(`${label} hours`, use24HourFormat ? 0 : 1, use24HourFormat ? 23 : 12);
+        this.hours = this.createSegment(t('{label} hours', { label }), use24HourFormat ? 0 : 1, use24HourFormat ? 23 : 12);
         const separator = this.inputEl.createSpan();
         separator.textContent = ':';
         separator.setAttribute('aria-hidden', 'true');
-        this.minutes = this.createSegment(`${label} minutes`, 0, 59);
+        this.minutes = this.createSegment(t('{label} minutes', { label }), 0, 59);
 
         this.period = null;
         if (!use24HourFormat) {
             this.period = this.inputEl.createEl('select');
-            this.period.setAttribute('aria-label', `${label} AM or PM`);
+            this.period.setAttribute('aria-label', t('{label} AM or PM', { label }));
             for (const period of ['AM', 'PM']) {
                 const option = this.period.createEl('option');
                 option.value = period;
@@ -42,11 +43,11 @@ export class TimeInput {
         this.pickerButton = this.inputEl.createEl('button');
         this.pickerButton.type = 'button';
         this.pickerButton.className = 'time-picker-toggle';
-        this.pickerButton.setAttribute('aria-label', `Choose ${label.toLowerCase()} time`);
+        this.pickerButton.setAttribute('aria-label', t('Choose {label} time', { label: label.toLowerCase() }));
         this.pickerButton.setAttribute('aria-haspopup', 'dialog');
         this.pickerButton.setAttribute('aria-expanded', 'false');
         this.pickerButton.setAttribute('aria-controls', `time-picker-popup-${TimeInput.nextId++}`);
-        this.pickerButton.title = 'Choose time';
+        this.pickerButton.title = t('Choose time');
         const icon = this.pickerButton.createSvg('svg');
         icon.setAttribute('viewBox', '0 0 24 24');
         icon.setAttribute('aria-hidden', 'true');
@@ -119,8 +120,8 @@ export class TimeInput {
             setValue: (value: string) => { input.value = value; this.notifyChange(); },
         });
         const columns = [
-            segmentColumn('Hours', this.hours, this.use24HourFormat ? 0 : 1, this.use24HourFormat ? 23 : 12),
-            segmentColumn('Minutes', this.minutes, 0, 59),
+            segmentColumn(t('Hours'), this.hours, this.use24HourFormat ? 0 : 1, this.use24HourFormat ? 23 : 12),
+            segmentColumn(t('Minutes'), this.minutes, 0, 59),
         ];
         if (this.period) {
             const period = this.period;

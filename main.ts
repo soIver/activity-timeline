@@ -5,6 +5,7 @@ import { DataManager } from './src/data/DataManager';
 import { TimelineView } from './src/views/TimelineView';
 import { ReportsView } from './src/views/ReportsView';
 import { EntryModal } from './src/modals/EntryModal';
+import { configureLanguage, t } from './src/i18n';
 import { Logger } from './src/utils/Logger';
 
 export default class ActivityTimelinePlugin extends Plugin {
@@ -36,19 +37,19 @@ export default class ActivityTimelinePlugin extends Plugin {
         );
 
         // Add ribbon icon to open timeline
-        this.addRibbonIcon('clock', 'Open timeline', () => {
+        this.addRibbonIcon('clock', t('Open timeline'), () => {
             void this.activateTimelineView();
         });
 
         // Add ribbon icon to open reports
-        this.addRibbonIcon('pie-chart', 'Open reports', () => {
+        this.addRibbonIcon('pie-chart', t('Open reports'), () => {
             void this.activateReportsView();
         });
 
         // Add command to open timeline
         this.addCommand({
             id: 'open-timeline',
-            name: 'Open timeline',
+            name: t('Open timeline'),
             callback: () => {
                 void this.activateTimelineView();
             },
@@ -57,7 +58,7 @@ export default class ActivityTimelinePlugin extends Plugin {
         // Add command to open reports
         this.addCommand({
             id: 'open-reports',
-            name: 'Open reports',
+            name: t('Open reports'),
             callback: () => {
                 void this.activateReportsView();
             },
@@ -66,7 +67,7 @@ export default class ActivityTimelinePlugin extends Plugin {
         // Add command to create new entry
         this.addCommand({
             id: 'create-entry',
-            name: 'Create time entry',
+            name: t('Create time entry'),
             callback: () => {
                 this.openCreateEntryModal();
             },
@@ -99,10 +100,12 @@ export default class ActivityTimelinePlugin extends Plugin {
     }
 
     async loadSettings(): Promise<void> {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<TimeTrackerSettings> | null);
+        this.settings = Object.assign(structuredClone(DEFAULT_SETTINGS), await this.loadData() as Partial<TimeTrackerSettings> | null);
+        configureLanguage(this.settings.language);
     }
 
     async saveSettings(): Promise<void> {
+        configureLanguage(this.settings.language);
         await this.saveData(this.settings);
         // Update logger debug mode
         Logger.setDebugMode(this.settings.debugMode);

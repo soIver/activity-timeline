@@ -118,6 +118,8 @@ export interface BillFrom {
  * Plugin settings stored in Obsidian's data.json
  */
 export interface TimeTrackerSettings {
+    /** UI language; auto follows the Obsidian language. */
+    language: 'auto' | 'en' | 'ru';
     /** Root folder for time tracking files */
     timeTrackingFolder: string;
     /** Bill From info for invoices */
@@ -160,6 +162,7 @@ export interface TimeTrackerSettings {
  * Default settings
  */
 export const DEFAULT_SETTINGS: TimeTrackerSettings = {
+    language: 'auto',
     timeTrackingFolder: 'TimeTracking',
     billFrom: {
         name: '',

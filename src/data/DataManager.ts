@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { TFile, TFolder, Vault, Notice } from 'obsidian';
 import type { TimeEntry, ParsedMonth, TimeTrackerSettings } from '../types';
 import { TableParser } from './TableParser';
@@ -235,7 +236,7 @@ export class DataManager {
         // Check for overlaps
         const existingEntries = await this.loadEntriesForDate(startDateTime);
         if (this.hasOverlap(fullEntry, existingEntries)) {
-            throw new Error('Entry overlaps with an existing time entry');
+            throw new Error(t('Entry overlaps with an existing time entry'));
         }
 
         // Load existing entries for the month, add new entry, regenerate file
@@ -248,7 +249,7 @@ export class DataManager {
         // Invalidate cache
         this.invalidateMonth(monthStr);
 
-        new Notice('Time entry created');
+        new Notice(t('Time entry created'));
 
         return fullEntry;
     }
@@ -290,7 +291,7 @@ export class DataManager {
         const existingEntries = await this.loadEntriesForDate(updatedEntry.startDateTime);
         const otherEntries = existingEntries.filter(e => !this.isSameEntry(e, oldEntry));
         if (this.hasOverlap(updatedEntry, otherEntries)) {
-            throw new Error('Entry overlaps with an existing time entry');
+            throw new Error(t('Entry overlaps with an existing time entry'));
         }
 
         if (monthChanged) {
@@ -318,7 +319,7 @@ export class DataManager {
             this.invalidateMonth(oldMonthStr);
         }
 
-        new Notice('Time entry updated');
+        new Notice(t('Time entry updated'));
 
         return updatedEntry;
     }
@@ -338,7 +339,7 @@ export class DataManager {
         // Invalidate cache
         this.invalidateMonth(monthStr);
 
-        new Notice('Time entry deleted');
+        new Notice(t('Time entry deleted'));
     }
 
     /**
