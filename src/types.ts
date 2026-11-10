@@ -43,12 +43,14 @@ export interface Project {
     id: string;
     /** Display name */
     name: string;
+    /** Previous display names retained when renaming categories. */
+    aliases?: string[];
     /** Hex color for the left bar indicator */
     color: string;
     /** Whether the project is archived */
     archived: boolean;
     /** Client ID this project belongs to (required) */
-    clientId: string;
+    clientId?: string;
     /** Optional rate override (uses client rate if not set) */
     rateOverride?: number;
 }
@@ -63,10 +65,12 @@ export interface Activity {
     id: string;
     /** Display name */
     name: string;
+    /** Previous display names retained when renaming categories. */
+    aliases?: string[];
     /** Hex color for reports/display */
     color: string;
     /** Client ID this activity belongs to (required) */
-    clientId: string;
+    clientId?: string;
 }
 
 /**
@@ -276,7 +280,7 @@ export interface ActivityReport {
  */
 export interface ClientReport {
     /** Client id */
-    clientId: string;
+    clientId?: string;
     /** Client display name */
     name: string;
     /** Client color */
