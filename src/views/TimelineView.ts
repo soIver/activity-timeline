@@ -850,43 +850,10 @@ export class TimelineView extends ItemView {
         const entry = this.entryDragEntry;
         const card = this.entryDragCard;
 
-        const newTop = parseFloat(card.style.top);
-        const newHeight = parseFloat(card.style.height);
-
-        // Convert pixel positions to times
-        const newStartMinutes = (newTop / this.settings.hourHeight) * 60;
-        const newDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
-
-        // Calculate which day the entry is now on
-        const dayIndex = Math.floor(newTop / this.dayHeight);
-        const minutesInDay = newStartMinutes - (dayIndex * 24 * 60);
-
-        // Get the actual date for this position
-        const newDate = new Date(this.centerDate);
-        newDate.setDate(newDate.getDate() + dayIndex - this.visibleDaysBuffer);
-
-        // Calculate start and end times
-        const startHours = Math.floor(minutesInDay / 60) % 24;
-        const startMins = Math.round(minutesInDay % 60 / 15) * 15; // Round to 15 min
-        const endTotalMins = minutesInDay + newDurationMinutes;
-        const endHours = Math.floor(endTotalMins / 60) % 24;
-        const endMins = Math.round(endTotalMins % 60 / 15) * 15;
-
-        // Determine end date (might span multiple days)
-        const endDate = new Date(newDate);
-        const daysToAdd = Math.floor(endTotalMins / (24 * 60));
-        if (daysToAdd > 0) {
-            endDate.setDate(endDate.getDate() + daysToAdd);
-        }
-
-        const newStartTime = `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')}`;
-        const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-        const newDateStr = TableParser.getDateString(newDate);
-        const endDateStr = TableParser.getDateString(endDate);
-
-        // Build full datetime strings (required by updateEntry)
-        const fullStart = `${newDateStr} ${newStartTime}`;
-        const fullEnd = `${endDateStr} ${newEndTime}`;
+        const { start, end } = this.getEntryDragRange(card);
+        const newDateStr = TableParser.getDateString(start);
+        const fullStart = TableParser.formatDateTime(start);
+        const fullEnd = TableParser.formatDateTime(end);
 
         try {
             await this.dataManager.updateEntry(entry, {
@@ -927,31 +894,28 @@ export class TimelineView extends ItemView {
      */
     private updateEntryDragTooltip(): void {
         if (!this.entryDragTooltipEl || !this.entryDragCard) return;
+        const { start, end } = this.getEntryDragRange(this.entryDragCard);
+        this.entryDragTooltipEl.setText(formatTimeRange(TableParser.formatTime(start), TableParser.formatTime(end),
+            this.settings.use24HourFormat));
+        const bottom = parseFloat(this.entryDragCard.style.top) + parseFloat(this.entryDragCard.style.height);
+        this.entryDragTooltipEl.style.top = `${bottom + 8}px`;
+    }
 
-        const newTop = parseFloat(this.entryDragCard.style.top);
-        const newHeight = parseFloat(this.entryDragCard.style.height);
-
-        // Convert pixel positions to times
-        const newStartMinutes = (newTop / this.settings.hourHeight) * 60;
-        const newDurationMinutes = (newHeight / this.settings.hourHeight) * 60;
-
-        // Calculate which day and time
-        const dayIndex = Math.floor(newTop / this.dayHeight);
-        const minutesInDay = newStartMinutes - (dayIndex * 24 * 60);
-        const endMinutesInDay = minutesInDay + newDurationMinutes;
-
-        // Round to 15 minutes
-        const startHours = Math.floor(minutesInDay / 60) % 24;
-        const startMins = Math.round(minutesInDay % 60 / 15) * 15;
-        const endHours = Math.floor(endMinutesInDay / 60) % 24;
-        const endMins = Math.round(endMinutesInDay % 60 / 15) * 15;
-
-        const startTime = `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')}`;
-        const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-
-        this.entryDragTooltipEl.setText(formatTimeRange(startTime, endTime, this.settings.use24HourFormat));
-        // Position tooltip below the card
-        this.entryDragTooltipEl.style.top = `${newTop + newHeight + 8}px`;
+    /** Round total minutes first; the preview and saved values share the same calendar rollover. */
+    private getEntryDragRange(card: HTMLElement): { start: Date; end: Date } {
+        const top = parseFloat(card.style.top);
+        const height = parseFloat(card.style.height);
+        const startMinutes = Math.round(top / this.settings.hourHeight * 60 / 15) * 15;
+        const endMinutes = Math.max(startMinutes + 15, Math.round((top + height) / this.settings.hourHeight * 60 / 15) * 15);
+        const toDate = (minutes: number): Date => {
+            const dayOffset = Math.floor(minutes / (24 * 60)) - this.visibleDaysBuffer;
+            const withinDay = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+            const date = new Date(this.centerDate);
+            date.setDate(date.getDate() + dayOffset);
+            date.setHours(Math.floor(withinDay / 60), withinDay % 60, 0, 0);
+            return date;
+        };
+        return { start: toDate(startMinutes), end: toDate(endMinutes) };
     }
 
     /**
