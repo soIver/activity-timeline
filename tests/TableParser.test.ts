@@ -84,8 +84,9 @@ describe('TableParser', () => {
 
             const result = TableParser.parseMonthFile(content, '2025-01');
 
-            expect(result.entries.length).toBe(1);
+            expect(result.entries.length).toBe(2);
             expect(result.entries[0].description).toBe('Valid entry');
+            expect(result.entries[1].client).toBe('personal');
         });
 
         it('should parse midnight-spanning entry correctly', () => {
@@ -285,5 +286,26 @@ describe('TableParser', () => {
             expect(TableParser.parseDateTime('2025-01-15')).toBeNull();
             expect(TableParser.parseDateTime('invalid')).toBeNull();
         });
+    });
+});
+
+
+describe('Personal file format', () => {
+    it('writes and reads personal files without a Client column', () => {
+        const content = '| Start | End | Description | Project | Activity | Notes |\n| --- | --- | --- | --- | --- | --- |\n| 2026-11-09 09:00 | 2026-11-09 10:00 | Чтение | | reading | |\n';
+        const parsed = TableParser.parseMonthFile(content, '2026-11');
+        expect(parsed.entries).toHaveLength(1);
+        expect(parsed.entries[0].activity).toBe('reading');
+        expect(parsed.entries[0].client).toBe('personal');
+        const generated = TableParser.generateTable(parsed.entries);
+        expect(generated).not.toContain('Client');
+        expect(TableParser.parseMonthFile(generated, '2026-11').entries).toHaveLength(1);
+    });
+    it('preserves legacy client metadata when rewriting an imported month', () => {
+        const content = '| Start | End | Description | Client | Project | Activity | Notes |\n| --- | --- | --- | --- | --- | --- | --- |\n| 2026-11-09 09:00 | 2026-11-09 10:00 | Old entry | acme | | | |\n';
+        const parsed = TableParser.parseMonthFile(content, '2026-11');
+        const rewritten = TableParser.generateTable(parsed.entries);
+        expect(rewritten).toContain('Client');
+        expect(TableParser.parseMonthFile(rewritten, '2026-11').entries[0].client).toBe('acme');
     });
 });

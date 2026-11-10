@@ -10,9 +10,9 @@ import { Logger } from '../utils/Logger';
  * Parses and serializes time entries using markdown tables via mdast/remark
  *
  * Format (one table per month file):
- * | Start | End | Description | Client | Project | Activity | Notes |
- * |-------|-----|-------------|--------|---------|----------|-------|
- * | 2024-01-15 09:15 | 2024-01-15 10:40 | Work on feature | acme | proj1 | dev | [[note]] |
+ * | Start | End | Description | Project | Activity | Notes |
+ * |-------|-----|-------------|---------|----------|-------|
+ * | 2024-01-15 09:15 | 2024-01-15 10:40 | Work on feature | proj1 | dev | [[note]] |
  *
  * Uses unified/remark for robust parsing that handles edge cases:
  * - Escaped pipes \|
@@ -22,7 +22,7 @@ import { Logger } from '../utils/Logger';
  */
 export class TableParser {
     /** Expected column headers (case-insensitive matching) */
-    static readonly HEADERS = ['Start', 'End', 'Description', 'Client', 'Project', 'Activity', 'Notes'];
+    static readonly HEADERS = ['Start', 'End', 'Description', 'Project', 'Activity', 'Notes'];
 
     /** Create the unified processor for parsing */
     private static createParser() {
@@ -134,11 +134,11 @@ export class TableParser {
 
         const startStr = getValue('start');
         const endStr = getValue('end');
-        const client = getValue('client');
+        const client = getValue('client') || 'personal';
 
-        // Must have start, end, and client
-        if (!startStr || !endStr || !client) {
-            Logger.log('TableParser: Missing required fields (start, end, or client)');
+        // Personal tracking only requires the time range. Read legacy client metadata when present.
+        if (!startStr || !endStr) {
+            Logger.log('TableParser: Missing required fields (start or end)');
             return null;
         }
 
@@ -279,13 +279,18 @@ export class TableParser {
             a.startDateTime.getTime() - b.startDateTime.getTime()
         );
 
+        // Preserve imported client metadata, while personal files use the simpler schema.
+        const keepLegacyClients = sorted.some(entry => entry.client && entry.client !== 'personal');
+        const headers = [...this.HEADERS];
+        if (keepLegacyClients) headers.splice(3, 0, 'Client');
+
         // Build table AST
         const tableRows: TableRow[] = [];
 
         // Header row
         tableRows.push({
             type: 'tableRow',
-            children: this.HEADERS.map<TableCell>(h => ({
+            children: headers.map<TableCell>(h => ({
                 type: 'tableCell',
                 children: [{ type: 'text', value: h }],
             })),
@@ -299,7 +304,7 @@ export class TableParser {
                     this.createCell(this.formatDateTime(entry.startDateTime)),
                     this.createCell(this.formatDateTime(entry.endDateTime)),
                     this.createCell(this.serializeDescription(entry.description)),
-                    this.createCell(entry.client),
+                    ...(keepLegacyClients ? [this.createCell(entry.client || 'personal')] : []),
                     this.createCell(entry.project || ''),
                     this.createCell(entry.activity || ''),
                     this.createCell(entry.linkedNote ? `[[${entry.linkedNote}]]` : ''),
@@ -309,7 +314,7 @@ export class TableParser {
 
         const table: Table = {
             type: 'table',
-            align: ['left', 'left', 'left', 'left', 'left', 'left', 'left'],
+            align: headers.map(() => 'left' as const),
             children: tableRows,
         };
 
@@ -373,7 +378,7 @@ export class TableParser {
      */
     static getFileHeader(): string {
         return `%%
-⚠️ WARNING: This file is managed by the "Where Did The Time Go" plugin.
+⚠️ WARNING: This file is managed by the "Activity Timeline" plugin.
 Do not edit manually - your changes may be overwritten.
 Use the Timeline view to create, edit, or delete entries.
 
@@ -383,11 +388,10 @@ FILE STRUCTURE:
 - Entries sorted chronologically by start time
 
 TABLE COLUMNS:
-| Start | End | Description | Client | Project | Activity | Notes |
+| Start | End | Description | Project | Activity | Notes |
 - Start (required): Start date and time (YYYY-MM-DD HH:mm)
 - End (required): End date and time (may be next day for overnight entries)
 - Description: Free text describing the activity
-- Client (required): Client or category
 - Project (optional): Project name
 - Activity (optional): Work type classification
 - Notes (optional): Obsidian wikilink [[linked note]]
