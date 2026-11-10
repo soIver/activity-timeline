@@ -1,10 +1,9 @@
+import { t, getLocale, formatDuration } from '../i18n';
 import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
-import { VIEW_TYPE_REPORTS, TimeEntry, TimeTrackerSettings, TimeRangePreset, ProjectReport, ProjectActivityBreakdown, ActivityReport, ClientReport, Client } from '../types';
+import { VIEW_TYPE_REPORTS, TimeEntry, TimeTrackerSettings, TimeRangePreset, ProjectReport, ProjectActivityBreakdown, ActivityReport } from '../types';
 import { DataManager } from '../data/DataManager';
 import { TableParser } from '../data/TableParser';
 import { Logger } from '../utils/Logger';
-import { InvoiceModal, InvoiceModalData } from '../modals/InvoiceModal';
-import { InvoiceGenerator } from '../invoice/InvoiceGenerator';
 
 /** Maximum days allowed for report range to prevent performance issues */
 const MAX_REPORT_DAYS = 90;
@@ -22,13 +21,7 @@ export class ReportsView extends ItemView {
     private customEndDate: Date | null = null;
     private projectReports: ProjectReport[] = [];
     private activityReports: ActivityReport[] = [];
-    private clientReports: ClientReport[] = [];
     private totalMinutes: number = 0;
-
-    // Store current entries and date range for invoice generation
-    private currentEntries: TimeEntry[] = [];
-    private currentRangeStart: Date | null = null;
-    private currentRangeEnd: Date | null = null;
 
     // DOM references
     private contentContainer: HTMLElement;
@@ -37,12 +30,9 @@ export class ReportsView extends ItemView {
     private summaryContainer: HTMLElement;
     private reportsContainer: HTMLElement;
     private activityContainer: HTMLElement;
-    private clientContainer: HTMLElement;
 
-    // Expanded clients (for project breakdown)
-    private expandedClients: Set<string> = new Set();
-    // Expanded projects within clients (key: "clientId:projectName")
-    private expandedClientProjects: Set<string> = new Set();
+    private expandedProjects: Set<string> = new Set();
+    private reportRequest = 0;
 
     constructor(
         leaf: WorkspaceLeaf,
@@ -59,7 +49,7 @@ export class ReportsView extends ItemView {
     }
 
     getDisplayText(): string {
-        return 'Reports';
+        return t('Reports');
     }
 
     getIcon(): string {
@@ -77,6 +67,7 @@ export class ReportsView extends ItemView {
 
     updateSettings(settings: TimeTrackerSettings): void {
         this.settings = settings;
+        this.render();
         void this.loadReport();
     }
 
@@ -104,7 +95,7 @@ export class ReportsView extends ItemView {
 
         // Custom date inputs (hidden by default)
         this.customDateInputs = this.contentContainer.createDiv('reports-custom-dates');
-        this.customDateInputs.addClass('is-hidden');
+        this.customDateInputs.toggleClass('is-hidden', this.selectedPreset !== 'custom');
         this.renderCustomDateInputs();
 
         // Summary section
@@ -116,8 +107,7 @@ export class ReportsView extends ItemView {
         // Activity breakdown section
         this.activityContainer = this.contentContainer.createDiv('reports-table-container');
 
-        // Client breakdown section
-        this.clientContainer = this.contentContainer.createDiv('reports-table-container');
+
     }
 
     /**
@@ -127,27 +117,27 @@ export class ReportsView extends ItemView {
         const header = container.createDiv('reports-header');
 
         const titleSection = header.createDiv('reports-header-title');
-        titleSection.createEl('h2', { text: 'Time reports' });
+        titleSection.createEl('h2', { text: t('Time reports') });
 
         const controls = header.createDiv('reports-header-controls');
 
         // Export CSV button
         const exportCsvBtn = controls.createEl('button', {
-            text: 'Export CSV',
+            text: t('Export CSV'),
             cls: 'reports-btn',
         });
         exportCsvBtn.addEventListener('click', () => { void this.exportToCSV(); });
 
         // Export JSON button
         const exportJsonBtn = controls.createEl('button', {
-            text: 'Export JSON',
+            text: t('Export JSON'),
             cls: 'reports-btn',
         });
         exportJsonBtn.addEventListener('click', () => { void this.exportToJSON(); });
 
         // Refresh button
         const refreshBtn = controls.createEl('button', {
-            text: 'Refresh',
+            text: t('Refresh'),
             cls: 'reports-btn',
         });
         refreshBtn.addEventListener('click', () => { void this.loadReport(); });
@@ -160,13 +150,13 @@ export class ReportsView extends ItemView {
         this.rangeSelector.empty();
 
         const presets: { value: TimeRangePreset; label: string }[] = [
-            { value: 'today', label: 'Today' },
-            { value: 'yesterday', label: 'Yesterday' },
-            { value: 'this-week', label: 'This Week' },
-            { value: 'last-week', label: 'Last Week' },
-            { value: 'this-month', label: 'This Month' },
-            { value: 'last-month', label: 'Last Month' },
-            { value: 'custom', label: 'Custom' },
+            { value: 'today', label: t('Today') },
+            { value: 'yesterday', label: t('Yesterday') },
+            { value: 'this-week', label: t('This Week') },
+            { value: 'last-week', label: t('Last Week') },
+            { value: 'this-month', label: t('This Month') },
+            { value: 'last-month', label: t('Last Month') },
+            { value: 'custom', label: t('Custom') },
         ];
 
         for (const preset of presets) {
@@ -184,7 +174,7 @@ export class ReportsView extends ItemView {
     private renderCustomDateInputs(): void {
         this.customDateInputs.empty();
 
-        const startLabel = this.customDateInputs.createEl('label', { text: 'From: ' });
+        const startLabel = this.customDateInputs.createEl('label', { text: t('From: ') });
         const startInput = startLabel.createEl('input', { type: 'date' });
         if (this.customStartDate) {
             startInput.value = TableParser.getDateString(this.customStartDate);
@@ -194,7 +184,7 @@ export class ReportsView extends ItemView {
             void this.loadReport();
         });
 
-        const endLabel = this.customDateInputs.createEl('label', { text: 'To: ' });
+        const endLabel = this.customDateInputs.createEl('label', { text: t('To: ') });
         const endInput = endLabel.createEl('input', { type: 'date' });
         if (this.customEndDate) {
             endInput.value = TableParser.getDateString(this.customEndDate);
@@ -320,30 +310,26 @@ export class ReportsView extends ItemView {
         // Check if range exceeds maximum
         const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
         if (daysDiff > MAX_REPORT_DAYS) {
-            new Notice(`Report range limited to ${MAX_REPORT_DAYS} days for performance. Please select a shorter range.`);
+            new Notice(t('Report range limited to {days} days for performance. Please select a shorter range.', { days: MAX_REPORT_DAYS }));
             return;
         }
 
         Logger.log('ReportsView: Loading report for', start.toDateString(), 'to', end.toDateString());
 
         // Load entries for the date range (includes overlapping entries)
+        const request = ++this.reportRequest;
         const entries = await this.dataManager.loadDateRange(start, end);
+        if (request !== this.reportRequest) return;
 
         Logger.log('ReportsView: Found', entries.length, 'entries');
-
-        // Store for invoice generation
-        this.currentEntries = entries;
-        this.currentRangeStart = start;
-        this.currentRangeEnd = end;
 
         // Calculate reports with effective durations (handles midnight-spanning)
         this.calculateReports(entries, start, end);
         this.calculateActivityReports(entries, start, end);
-        this.calculateClientReports(entries, start, end);
 
         // Render the results
         this.renderSummary(start, end);
-        this.renderClientTable();
+        this.renderTables();
     }
 
     /**
@@ -363,7 +349,7 @@ export class ReportsView extends ItemView {
 
             if (effectiveMinutes <= 0) continue;
 
-            const projectName = entry.project || '(No Project)';
+            const projectName = this.projectName(entry.project);
 
             if (!projectMap.has(projectName)) {
                 projectMap.set(projectName, { minutes: 0, activityMap: new Map() });
@@ -374,7 +360,7 @@ export class ReportsView extends ItemView {
             this.totalMinutes += effectiveMinutes;
 
             // Track activity within this project (mutually exclusive - each entry has 0 or 1 activity)
-            const activityName = entry.activity || '(No Activity)';
+            const activityName = this.activityName(entry.activity);
             const current = projectData.activityMap.get(activityName) || 0;
             projectData.activityMap.set(activityName, current + effectiveMinutes);
         }
@@ -431,7 +417,7 @@ export class ReportsView extends ItemView {
 
             if (effectiveMinutes <= 0) continue;
 
-            const activityName = entry.activity || '(No Activity)';
+            const activityName = this.activityName(entry.activity);
 
             const current = activityMap.get(activityName) || 0;
             activityMap.set(activityName, current + effectiveMinutes);
@@ -471,427 +457,86 @@ export class ReportsView extends ItemView {
 
         // Total hours
         const totalCard = this.summaryContainer.createDiv('reports-total-card');
-        totalCard.createDiv({ text: 'Total Time', cls: 'reports-total-label' });
+        totalCard.createDiv({ text: t('Total Time'), cls: 'reports-total-label' });
         totalCard.createDiv({ text: this.formatDuration(this.totalMinutes), cls: 'reports-total-value' });
 
         // Project count
         const projectCard = this.summaryContainer.createDiv('reports-summary-card');
-        projectCard.createDiv({ text: 'Projects', cls: 'reports-summary-label' });
+        projectCard.createDiv({ text: t('Projects'), cls: 'reports-summary-label' });
         projectCard.createDiv({ text: String(this.projectReports.length), cls: 'reports-summary-value' });
 
-        // Client count
-        const clientCard = this.summaryContainer.createDiv('reports-summary-card');
-        clientCard.createDiv({ text: 'Clients', cls: 'reports-summary-label' });
-        clientCard.createDiv({ text: String(this.clientReports.length), cls: 'reports-summary-value' });
+        const activityCard = this.summaryContainer.createDiv('reports-summary-card');
+        activityCard.createDiv({ text: t('Activities'), cls: 'reports-summary-label' });
+        activityCard.createDiv({ text: String(this.activityReports.length), cls: 'reports-summary-value' });
     }
 
-    /**
-     * Calculate client reports from entries
-     * Groups time by client (using entry.client directly)
-     */
-    private calculateClientReports(entries: TimeEntry[], rangeStart: Date, rangeEnd: Date): void {
-        // Only calculate if there are clients defined
-        if (this.settings.clients.length === 0) {
-            this.clientReports = [];
+    private renderTables(): void {
+        this.reportsContainer.empty();
+        this.activityContainer.empty();
+        if (!this.projectReports.length) {
+            this.reportsContainer.createDiv({ text: t('No time entries found for this period.'), cls: 'reports-empty' });
             return;
         }
-
-        // Map: clientId -> { minutes, projects: Map<projectName, { minutes, activities: Map<activityName, minutes> }> }
-        type ProjectData = { minutes: number; activities: Map<string, number> };
-        type ClientData = { minutes: number; projects: Map<string, ProjectData> };
-        const clientMap = new Map<string, ClientData>();
-
-        for (const entry of entries) {
-            const effectiveMinutes = this.dataManager.getEffectiveDuration(entry, rangeStart, rangeEnd);
-            if (effectiveMinutes <= 0) continue;
-
-            const projectName = entry.project || '(No Project)';
-            const activityName = entry.activity || '(No Activity)';
-            const clientId = entry.client;
-
-            if (!clientMap.has(clientId)) {
-                clientMap.set(clientId, { minutes: 0, projects: new Map() });
-            }
-
-            const clientData = clientMap.get(clientId);
-            clientData.minutes += effectiveMinutes;
-
-            if (!clientData.projects.has(projectName)) {
-                clientData.projects.set(projectName, { minutes: 0, activities: new Map() });
-            }
-
-            const projectData = clientData.projects.get(projectName);
-            projectData.minutes += effectiveMinutes;
-
-            const currentActivityMinutes = projectData.activities.get(activityName) || 0;
-            projectData.activities.set(activityName, currentActivityMinutes + effectiveMinutes);
-        }
-
-        // Convert to ClientReport array
-        this.clientReports = [];
-
-        let totalClientMinutes = 0;
-        for (const [, data] of clientMap) {
-            totalClientMinutes += data.minutes;
-        }
-
-        for (const [clientId, data] of clientMap) {
-            const client = this.settings.clients.find(c => c.id === clientId);
-            if (!client) continue;
-
-            const percentage = totalClientMinutes > 0
-                ? (data.minutes / totalClientMinutes) * 100
-                : 0;
-
-            // Calculate billable amount (hourly rate * hours)
-            const billableAmount = client.rate * (data.minutes / 60);
-
-            // Build project breakdown with activity breakdown
-            const projectBreakdown: ProjectReport[] = [];
-            for (const [projectName, projectData] of data.projects) {
-                const projectColor = this.getProjectColor(projectName);
-
-                // Build activity breakdown for this project
-                const activityBreakdown: ProjectActivityBreakdown[] = [];
-                for (const [activityName, activityMinutes] of projectData.activities) {
-                    activityBreakdown.push({
-                        activity: activityName,
-                        color: this.getActivityColor(activityName),
-                        totalMinutes: activityMinutes,
-                        percentageOfProject: projectData.minutes > 0
-                            ? (activityMinutes / projectData.minutes) * 100
-                            : 0,
-                    });
-                }
-                activityBreakdown.sort((a, b) => b.totalMinutes - a.totalMinutes);
-
-                projectBreakdown.push({
-                    project: projectName,
-                    color: projectColor,
-                    totalMinutes: projectData.minutes,
-                    percentage: data.minutes > 0 ? (projectData.minutes / data.minutes) * 100 : 0,
-                    activityBreakdown,
-                });
-            }
-            projectBreakdown.sort((a, b) => b.totalMinutes - a.totalMinutes);
-
-            this.clientReports.push({
-                clientId,
-                name: client.name,
-                color: client.color,
-                rate: client.rate,
-                currency: client.currency,
-                totalMinutes: data.minutes,
-                billableAmount,
-                percentage,
-                projectBreakdown,
+        this.reportsContainer.createEl('h3', { text: t('By project') });
+        const projects = this.createTable(this.reportsContainer, t('Project / activity'));
+        for (const report of this.projectReports) {
+            const row = this.reportRow(projects, report.project, report.color, report.totalMinutes, report.percentage);
+            const toggle = row.firstElementChild.createEl('button', {
+                text: this.expandedProjects.has(report.project) ? '▾' : '▸',
+                attr: { 'aria-label': t('Show activities'), 'aria-expanded': String(this.expandedProjects.has(report.project)) },
             });
-        }
-
-        // Sort clients by time descending
-        this.clientReports.sort((a, b) => b.totalMinutes - a.totalMinutes);
-    }
-
-    /**
-     * Render the client breakdown table (Client → Project → Activity hierarchy)
-     */
-    private renderClientTable(): void {
-        this.clientContainer.empty();
-
-        // Only show if there are client reports
-        if (this.clientReports.length === 0) {
-            this.clientContainer.createDiv({
-                text: 'No time entries found for this period.',
-                cls: 'reports-empty',
+            toggle.addEventListener('click', () => {
+                if (this.expandedProjects.has(report.project)) this.expandedProjects.delete(report.project);
+                else this.expandedProjects.add(report.project);
+                this.renderTables();
             });
-            return;
-        }
-
-        const showBilling = this.settings.enableBilling;
-        const table = this.clientContainer.createEl('table', { cls: 'reports-table' });
-
-        // Header
-        const thead = table.createEl('thead');
-        const headerRow = thead.createEl('tr');
-        headerRow.createEl('th', { text: 'Client / project / activity' });
-        headerRow.createEl('th', { text: 'Hours', cls: 'reports-col-hours' });
-        if (showBilling) {
-            headerRow.createEl('th', { text: 'Billable', cls: 'reports-col-billable' });
-        }
-        headerRow.createEl('th', { text: '%', cls: 'reports-col-percent' });
-        headerRow.createEl('th', { text: '', cls: 'reports-col-bar' });
-
-        // Body
-        const tbody = table.createEl('tbody');
-
-        for (const report of this.clientReports) {
-            // Client row
-            const row = tbody.createEl('tr', { cls: 'reports-client-row' });
-            row.addEventListener('click', () => this.toggleClientExpand(report.clientId));
-
-            const nameCell = row.createEl('td', { cls: 'reports-client-name' });
-            const colorDot = nameCell.createSpan('reports-color-dot');
-            colorDot.style.backgroundColor = report.color;
-
-            const expandIcon = nameCell.createSpan('reports-expand-icon');
-            expandIcon.setText(this.expandedClients.has(report.clientId) ? '▼' : '▶');
-
-            nameCell.createSpan({ text: report.name });
-
-            // Invoice button (show if billing is enabled and client has tracked time)
-            if (showBilling && report.totalMinutes > 0) {
-                const invoiceBtn = nameCell.createEl('button', {
-                    text: 'Invoice',
-                    cls: 'reports-invoice-btn',
-                });
-                invoiceBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.openInvoiceModal(report.clientId, report.billableAmount);
-                });
-            }
-
-            row.createEl('td', {
-                text: this.formatDuration(report.totalMinutes),
-                cls: 'reports-col-hours',
-            });
-
-            if (showBilling) {
-                row.createEl('td', {
-                    text: this.formatCurrency(report.billableAmount, report.currency),
-                    cls: 'reports-col-billable',
-                });
-            }
-
-            row.createEl('td', {
-                text: `${report.percentage.toFixed(1)}%`,
-                cls: 'reports-col-percent',
-            });
-
-            const barCell = row.createEl('td', { cls: 'reports-col-bar' });
-            const bar = barCell.createDiv('reports-bar');
-            bar.style.width = `${report.percentage}%`;
-            bar.style.backgroundColor = report.color;
-
-            // Project rows (if client expanded)
-            if (this.expandedClients.has(report.clientId)) {
-                for (const projectReport of report.projectBreakdown) {
-                    const projectKey = `${report.clientId}:${projectReport.project}`;
-                    const projectExpanded = this.expandedClientProjects.has(projectKey);
-                    const hasActivities = projectReport.activityBreakdown.length > 0;
-
-                    const projectRow = tbody.createEl('tr', { cls: 'reports-project-nested-row' });
-                    if (hasActivities) {
-                        projectRow.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            this.toggleProjectExpand(projectKey);
-                        });
-                    }
-
-                    const projectNameCell = projectRow.createEl('td', { cls: 'reports-project-nested-name' });
-                    const projectDot = projectNameCell.createSpan('reports-color-dot');
-                    projectDot.style.backgroundColor = projectReport.color;
-
-                    if (hasActivities) {
-                        const projectExpandIcon = projectNameCell.createSpan('reports-expand-icon');
-                        projectExpandIcon.setText(projectExpanded ? '▼' : '▶');
-                    }
-
-                    projectNameCell.createSpan({ text: projectReport.project });
-
-                    projectRow.createEl('td', {
-                        text: this.formatDuration(projectReport.totalMinutes),
-                        cls: 'reports-col-hours',
-                    });
-
-                    if (showBilling) {
-                        projectRow.createEl('td', { cls: 'reports-col-billable' });
-                    }
-
-                    projectRow.createEl('td', {
-                        text: `${projectReport.percentage.toFixed(1)}%`,
-                        cls: 'reports-col-percent',
-                    });
-
-                    const projectBarCell = projectRow.createEl('td', { cls: 'reports-col-bar' });
-                    const projectBar = projectBarCell.createDiv('reports-bar reports-bar-nested');
-                    projectBar.style.width = `${projectReport.percentage}%`;
-                    projectBar.style.backgroundColor = projectReport.color;
-
-                    // Activity rows (if project expanded)
-                    if (projectExpanded && hasActivities) {
-                        for (const activityReport of projectReport.activityBreakdown) {
-                            const activityRow = tbody.createEl('tr', { cls: 'reports-activity-nested-row' });
-
-                            const activityNameCell = activityRow.createEl('td', { cls: 'reports-activity-nested-name' });
-                            const activityDot = activityNameCell.createSpan('reports-color-dot');
-                            activityDot.style.backgroundColor = activityReport.color;
-                            activityNameCell.createSpan({ text: activityReport.activity });
-
-                            activityRow.createEl('td', {
-                                text: this.formatDuration(activityReport.totalMinutes),
-                                cls: 'reports-col-hours',
-                            });
-
-                            if (showBilling) {
-                                activityRow.createEl('td', { cls: 'reports-col-billable' });
-                            }
-
-                            activityRow.createEl('td', {
-                                text: `${activityReport.percentageOfProject.toFixed(1)}%`,
-                                cls: 'reports-col-percent',
-                            });
-
-                            const activityBarCell = activityRow.createEl('td', { cls: 'reports-col-bar' });
-                            const activityBar = activityBarCell.createDiv('reports-bar reports-bar-activity');
-                            activityBar.style.width = `${activityReport.percentageOfProject}%`;
-                            activityBar.style.backgroundColor = activityReport.color;
-                        }
-                    }
+            if (this.expandedProjects.has(report.project)) {
+                for (const activity of report.activityBreakdown) {
+                    this.reportRow(projects, activity.activity, activity.color, activity.totalMinutes,
+                        activity.percentageOfProject).addClass('reports-activity-nested-row');
                 }
             }
         }
-
-        // Total row
-        const totalRow = tbody.createEl('tr', { cls: 'reports-total-row' });
-        totalRow.createEl('td', { text: 'Total', cls: 'reports-total-label' });
-
-        let totalMinutes = 0;
-        let totalBillable = 0;
-        for (const report of this.clientReports) {
-            totalMinutes += report.totalMinutes;
-            totalBillable += report.billableAmount;
+        this.activityContainer.createEl('h3', { text: t('By activity') });
+        const activities = this.createTable(this.activityContainer, t('Activity'));
+        for (const report of this.activityReports) {
+            this.reportRow(activities, report.name, report.color, report.totalMinutes, report.percentage);
         }
-
-        totalRow.createEl('td', {
-            text: this.formatDuration(totalMinutes),
-            cls: 'reports-col-hours',
-        });
-
-        if (showBilling) {
-            // Use first client's currency for total (could be mixed currencies)
-            const currency = this.clientReports[0]?.currency || 'USD';
-            totalRow.createEl('td', {
-                text: this.formatCurrency(totalBillable, currency),
-                cls: 'reports-col-billable',
-            });
-        }
-
-        totalRow.createEl('td', { text: '', cls: 'reports-col-percent' });
-        totalRow.createEl('td', { text: '', cls: 'reports-col-bar' });
     }
 
-    /**
-     * Toggle client expansion to show/hide project breakdown
-     */
-    private toggleClientExpand(clientId: string): void {
-        if (this.expandedClients.has(clientId)) {
-            this.expandedClients.delete(clientId);
-        } else {
-            this.expandedClients.add(clientId);
-        }
-        this.renderClientTable();
+    private createTable(container: HTMLElement, label: string): HTMLElement {
+        const table = container.createEl('table', { cls: 'reports-table' });
+        const header = table.createEl('thead').createEl('tr');
+        for (const name of [label, t('Duration'), '%', '']) header.createEl('th', { text: name });
+        return table.createEl('tbody');
     }
 
-    private toggleProjectExpand(projectKey: string): void {
-        if (this.expandedClientProjects.has(projectKey)) {
-            this.expandedClientProjects.delete(projectKey);
-        } else {
-            this.expandedClientProjects.add(projectKey);
-        }
-        this.renderClientTable();
+    private reportRow(body: HTMLElement, name: string, color: string, minutes: number, percentage: number): HTMLElement {
+        const row = body.createEl('tr');
+        const cell = row.createEl('td');
+        cell.createSpan('reports-color-dot').style.backgroundColor = color;
+        cell.createSpan({ text: name });
+        row.createEl('td', { text: this.formatDuration(minutes), cls: 'reports-col-hours' });
+        row.createEl('td', { text: `${percentage.toFixed(1)}%`, cls: 'reports-col-percent' });
+        const bar = row.createEl('td', { cls: 'reports-col-bar' }).createDiv('reports-bar');
+        bar.style.width = `${Math.min(100, percentage)}%`;
+        bar.style.backgroundColor = color;
+        return row;
     }
 
-    /**
-     * Open the invoice modal for a client
-     */
-    private openInvoiceModal(clientId: string, totalAmount: number): void {
-        const client = this.settings.clients.find(c => c.id === clientId);
-        if (!client) {
-            new Notice('Client not found');
-            return;
-        }
-
-        if (!this.currentRangeStart || !this.currentRangeEnd) {
-            new Notice('No date range selected');
-            return;
-        }
-
-        const modalData: InvoiceModalData = {
-            client,
-            periodStart: this.currentRangeStart,
-            periodEnd: this.currentRangeEnd,
-            totalAmount,
-        };
-
-        const modal = new InvoiceModal(
-            this.app,
-            modalData,
-            (result) => {
-                void this.generateInvoice(client, result);
-            }
-        );
-        modal.open();
+    private projectName(value?: string): string {
+        if (!value) return t('No project');
+        return this.settings.projects.find(item => item.id === value || item.name === value || item.aliases?.includes(value))?.name || value;
     }
 
-    /**
-     * Generate the invoice file
-     */
-    private async generateInvoice(client: Client, modalResult: import('../modals/InvoiceModal').InvoiceModalResult): Promise<void> {
-        if (!this.currentRangeStart || !this.currentRangeEnd) {
-            new Notice('No date range selected');
-            return;
-        }
-
-        try {
-            const generator = new InvoiceGenerator(this.app, this.settings, this.dataManager);
-
-            // Generate invoice data
-            const invoiceData = generator.generateInvoiceData(
-                this.currentEntries,
-                client,
-                modalResult,
-                this.currentRangeStart,
-                this.currentRangeEnd
-            );
-
-            // Generate markdown
-            const markdown = generator.generateMarkdown(invoiceData);
-
-            // Save to file
-            const filepath = await generator.saveInvoice(invoiceData, markdown);
-
-            new Notice(`Invoice created: ${filepath}`);
-
-            // Open the file
-            const file = this.app.vault.getAbstractFileByPath(filepath);
-            if (file) {
-                await this.app.workspace.getLeaf().openFile(file as import('obsidian').TFile);
-            }
-        } catch (error) {
-            Logger.log('ReportsView: Error generating invoice', error);
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            new Notice(`Error generating invoice: ${errorMessage}`);
-        }
+    private activityName(value?: string): string {
+        if (!value) return t('No activity');
+        return this.settings.activities.find(item => item.id === value || item.name === value || item.aliases?.includes(value))?.name || value;
     }
 
     // Helper methods
 
-    private formatDuration(minutes: number): string {
-        const hours = Math.floor(minutes / 60);
-        const mins = minutes % 60;
-        if (hours === 0) return `${mins}m`;
-        if (mins === 0) return `${hours}h`;
-        return `${hours}h ${mins}m`;
-    }
-
-    private formatCurrency(amount: number, currency: string): string {
-        return new Intl.NumberFormat(undefined, {
-            style: 'currency',
-            currency: currency,
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(amount);
-    }
+    private formatDuration(minutes: number): string { return formatDuration(minutes); }
 
     private formatDateRange(start: Date, end: Date): string {
         const sameDay = start.toDateString() === end.toDateString();
@@ -902,21 +547,21 @@ export class ReportsView extends ItemView {
         };
 
         if (sameDay) {
-            return start.toLocaleDateString(undefined, options);
+            return start.toLocaleDateString(getLocale(), options);
         }
 
-        return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString(undefined, options)}`;
+        return `${start.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString(getLocale(), options)}`;
     }
 
     private getProjectColor(projectName: string): string {
-        if (projectName === '(No Project)') return '#666';
-        const project = this.settings.projects.find(p => p.name === projectName || p.id === projectName);
+        if (projectName === t('No project')) return '#666';
+        const project = this.settings.projects.find(p => p.name === projectName || p.id === projectName || p.aliases?.includes(projectName));
         return project?.color || '#4f46e5';
     }
 
     private getActivityColor(activityName: string): string {
-        if (activityName === '(No Activity)') return '#666';
-        const activity = this.settings.activities.find(a => a.name === activityName || a.id === activityName);
+        if (activityName === t('No activity')) return '#666';
+        const activity = this.settings.activities.find(a => a.name === activityName || a.id === activityName || a.aliases?.includes(activityName));
         return activity?.color || '#f59e0b';
     }
 
@@ -951,7 +596,7 @@ export class ReportsView extends ItemView {
      */
     private generateCSV(entries: TimeEntry[]): string {
         // CSV headers - Start/End include full datetime since entries can span days
-        const headers = ['Start', 'End', 'Duration', 'Description', 'Client', 'Project', 'Activity', 'Notes'];
+        const headers = ['Start', 'End', 'Duration', 'Description', 'Project', 'Activity', 'Notes'];
 
         // Sort entries by date/time
         const sorted = [...entries].sort((a, b) =>
@@ -962,18 +607,13 @@ export class ReportsView extends ItemView {
         const rows: string[][] = [headers];
 
         for (const entry of sorted) {
-            // Get client name from settings
-            const client = this.settings.clients.find(c => c.id === entry.client);
-            const clientName = client?.name || entry.client;
-
             const row = [
                 TableParser.formatDateTime(entry.startDateTime),
                 TableParser.formatDateTime(entry.endDateTime),
                 this.formatDuration(entry.durationMinutes),
                 entry.description || '',
-                clientName,
-                entry.project || '',
-                entry.activity || '',
+                entry.project ? this.projectName(entry.project) : '',
+                entry.activity ? this.activityName(entry.activity) : '',
                 entry.linkedNote || '',
             ];
             rows.push(row);
@@ -1027,7 +667,7 @@ export class ReportsView extends ItemView {
         const entries = await this.dataManager.loadDateRange(start, end);
 
         if (entries.length === 0) {
-            new Notice('No entries to export');
+            new Notice(t('No entries to export'));
             return;
         }
 
@@ -1065,9 +705,8 @@ export class ReportsView extends ItemView {
                 end: entry.end,
                 durationMinutes: entry.durationMinutes,
                 description: entry.description,
-                client: entry.client,
-                project: entry.project || null,
-                activity: entry.activity || null,
+                project: entry.project ? this.projectName(entry.project) : null,
+                activity: entry.activity ? this.activityName(entry.activity) : null,
                 linkedNote: entry.linkedNote || null,
             })),
         };
