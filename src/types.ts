@@ -1,5 +1,5 @@
 /**
- * Core types for Where Did The Time Go plugin
+ * Core types for Activity Timeline
  */
 
 /**
@@ -210,12 +210,12 @@ export interface ParsedMonth {
 /**
  * View type identifier for the timeline view
  */
-export const VIEW_TYPE_TIMELINE = 'where-did-the-time-go-timeline';
+export const VIEW_TYPE_TIMELINE = 'activity-timeline-timeline';
 
 /**
  * View type identifier for the reports view
  */
-export const VIEW_TYPE_REPORTS = 'where-did-the-time-go-reports';
+export const VIEW_TYPE_REPORTS = 'activity-timeline-reports';
 
 /**
  * Time range preset options for reports

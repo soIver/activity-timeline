@@ -16,3 +16,6 @@ CLAUDE.md
 
 # direnv (local env, may hold secrets)
 .envrc
+
+# Local plugin settings and user data
+/data.json

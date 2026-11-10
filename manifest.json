@@ -1,9 +1,9 @@
 {
-	"id": "where-did-the-time-go",
-	"name": "Where Did The Time Go",
+	"id": "activity-timeline",
+	"name": "Activity Timeline",
 	"version": "1.0.11",
 	"minAppVersion": "1.13.0",
-	"description": "Visual time tracking with infinite-scroll timeline, hierarchical reports, and one-click invoicing. Data stays in your vault as markdown.",
+	"description": "Personal time tracking with a timeline, activities, projects, reports, and English/Russian UI. Data stays in your vault as Markdown.",
 	"author": "Plattnum",
 	"authorUrl": "https://github.com/plattnum",
 	"isDesktopOnly": false
