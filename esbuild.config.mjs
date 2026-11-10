@@ -13,9 +13,9 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = (process.argv[2] === "production");
 
-// Define test vault path - normally this would be configurable, but setting a default for dev convenience
-const TEST_VAULT_PATH = process.env.OBSIDIAN_TEST_VAULT || "./vaults/where-did-the-time-go-vault";
-const PLUGIN_ID = "where-did-the-time-go";
+// Optional copying for setups without a symlink. Builds always write to the repo root.
+const TEST_VAULT_PATH = process.env.OBSIDIAN_TEST_VAULT || "";
+const PLUGIN_ID = JSON.parse(fs.readFileSync("manifest.json", "utf8")).id;
 
 const context = await esbuild.context({
     banner: {
@@ -58,8 +58,9 @@ const context = await esbuild.context({
         {
             name: 'copy-to-vault',
             setup(build) {
-                build.onEnd(async () => {
-                    // Always copy to test vault (both dev and prod)
+                build.onEnd((result) => {
+                    if (result.errors.length) return;
+                    // Copy only when explicitly configured.
                     if (TEST_VAULT_PATH) {
                         const pluginDir = path.join(TEST_VAULT_PATH, ".obsidian", "plugins", PLUGIN_ID);
 
@@ -68,6 +69,7 @@ const context = await esbuild.context({
                                 fs.mkdirSync(pluginDir, { recursive: true });
                             }
 
+                            if (fs.realpathSync(pluginDir) === fs.realpathSync(".")) return;
                             fs.copyFileSync("main.js", path.join(pluginDir, "main.js"));
                             fs.copyFileSync("manifest.json", path.join(pluginDir, "manifest.json"));
                             if (fs.existsSync("styles.css")) {
@@ -92,10 +94,10 @@ if (prod) {
 
     // Watch styles.css separately since it's not part of the JS build graph
     const pluginDir = path.join(TEST_VAULT_PATH, ".obsidian", "plugins", PLUGIN_ID);
-    fs.watch("styles.css", (eventType) => {
+    if (TEST_VAULT_PATH) fs.watch("styles.css", (eventType) => {
         if (eventType === "change") {
             try {
-                fs.copyFileSync("styles.css", path.join(pluginDir, "styles.css"));
+                if (fs.realpathSync(pluginDir) !== fs.realpathSync(".")) fs.copyFileSync("styles.css", path.join(pluginDir, "styles.css"));
                 console.log("styles.css copied to vault");
             } catch (e) {
                 console.error("Failed to copy styles.css:", e);
