@@ -1,8 +1,10 @@
+import { t, getLocale, formatDuration } from '../i18n';
 import { ItemView, WorkspaceLeaf, Modal, App, setIcon, Notice } from 'obsidian';
 import { VIEW_TYPE_TIMELINE, TimeEntry, TimeTrackerSettings } from '../types';
 import { DataManager } from '../data/DataManager';
 import { TableParser } from '../data/TableParser';
 import { EntryModal, EntryModalData } from '../modals/EntryModal';
+import { setModalTitle } from '../modals/ModalLayout';
 import { Logger } from '../utils/Logger';
 import { formatTimeRange } from '../utils/TimeFormat';
 
@@ -29,6 +31,7 @@ export class TimelineView extends ItemView {
 
     // Dimensions
     private dayHeight: number = 0; // Calculated as 24 * hourHeight
+    private renderedLocale = getLocale();
     private resizeObserver: ResizeObserver | null = null;
 
     // Drag selection state (for creating new entries)
@@ -51,7 +54,8 @@ export class TimelineView extends ItemView {
     constructor(
         leaf: WorkspaceLeaf,
         settings: TimeTrackerSettings,
-        dataManager: DataManager
+        dataManager: DataManager,
+        private readonly saveSettings: () => Promise<void> = async () => {},
     ) {
         super(leaf);
         this.settings = settings;
@@ -63,7 +67,7 @@ export class TimelineView extends ItemView {
     }
 
     getDisplayText(): string {
-        return '∞ timeline';
+        return `∞ ${t('Timeline')}`;
     }
 
     getIcon(): string {
@@ -108,6 +112,12 @@ export class TimelineView extends ItemView {
     updateSettings(settings: TimeTrackerSettings): void {
         this.settings = settings;
         this.dayHeight = 24 * this.settings.hourHeight;
+        if (this.timelineContainer && this.renderedLocale !== getLocale()) {
+            const scrollTop = this.timelineContainer.scrollTop;
+            this.resizeObserver?.disconnect();
+            void this.render().then(() => { this.timelineContainer.scrollTop = scrollTop; this.updateVisibleDateLabel(); });
+            return;
+        }
         // Use refresh() to preserve scroll position (if already rendered)
         if (this.timelineContainer) {
             void this.refresh();
@@ -140,6 +150,7 @@ export class TimelineView extends ItemView {
      * Main render function - sets up the infinite scroll container
      */
     private async render(): Promise<void> {
+        this.renderedLocale = getLocale();
         const container = this.containerEl.children[1] as HTMLElement;
         container.empty();
         container.addClass('time-tracker-timeline');
@@ -197,7 +208,7 @@ export class TimelineView extends ItemView {
         const titleSection = header.createDiv('timeline-header-title');
         const title = titleSection.createEl('h2');
         title.createSpan({ text: '∞ ' });
-        title.createSpan({ text: 'Timeline' });
+        title.createSpan({ text: t('Timeline') });
 
         // Visible date range label
         this.visibleDateLabel = titleSection.createSpan('timeline-visible-date');
@@ -211,31 +222,31 @@ export class TimelineView extends ItemView {
 
         // Today button
         const todayBtn = controls.createEl('button', {
-            text: 'Today',
+            text: t('Today'),
             cls: 'timeline-btn',
-            attr: { 'aria-label': 'Go to today' },
+            attr: { 'aria-label': t('Go to today') },
         });
         todayBtn.addEventListener('click', () => this.scrollToDate(new Date()));
 
         // Now button - scrolls to current time
         const nowBtn = controls.createEl('button', {
-            text: 'Now',
+            text: t('Now'),
             cls: 'timeline-btn timeline-btn-primary',
-            attr: { 'aria-label': 'Scroll to current time' },
+            attr: { 'aria-label': t('Scroll to current time') },
         });
         nowBtn.addEventListener('click', () => this.scrollToNow());
 
         // Navigation buttons (1 day at a time)
         const prevBtn = controls.createEl('button', {
             cls: 'timeline-btn timeline-nav-btn',
-            attr: { 'aria-label': 'Previous day' },
+            attr: { 'aria-label': t('Previous day') },
         });
         setIcon(prevBtn, 'chevron-left');
         prevBtn.addEventListener('click', () => this.navigateDays(-1));
 
         const nextBtn = controls.createEl('button', {
             cls: 'timeline-btn timeline-nav-btn',
-            attr: { 'aria-label': 'Next day' },
+            attr: { 'aria-label': t('Next day') },
         });
         setIcon(nextBtn, 'chevron-right');
         nextBtn.addEventListener('click', () => this.navigateDays(1));
@@ -243,7 +254,7 @@ export class TimelineView extends ItemView {
         // Jump to date - calendar button
         const jumpBtn = controls.createEl('button', {
             cls: 'timeline-btn timeline-nav-btn',
-            attr: { 'aria-label': 'Jump to date' },
+            attr: { 'aria-label': t('Jump to date') },
         });
         setIcon(jumpBtn, 'calendar');
 
@@ -275,7 +286,7 @@ export class TimelineView extends ItemView {
         // Add entry button
         const addBtn = controls.createEl('button', {
             cls: 'timeline-btn timeline-btn-add',
-            attr: { 'aria-label': 'Add new entry' },
+            attr: { 'aria-label': t('Add new entry') },
         });
         setIcon(addBtn, 'plus');
         addBtn.addEventListener('click', () => {
@@ -377,7 +388,7 @@ export class TimelineView extends ItemView {
 
         if (sameDay) {
             // Single day: "Mon, Aug 10, 2026"
-            return startDate.toLocaleDateString(undefined, {
+            return startDate.toLocaleDateString(getLocale(), {
                 weekday: 'short',
                 month: 'short',
                 day: 'numeric',
@@ -385,15 +396,15 @@ export class TimelineView extends ItemView {
             });
         } else if (sameMonth) {
             // Same month: "Mon 10 – Tue 11 Aug 2026"
-            const startWd = startDate.toLocaleDateString(undefined, { weekday: 'short' });
-            const endWd = endDate.toLocaleDateString(undefined, { weekday: 'short' });
-            const month = startDate.toLocaleDateString(undefined, { month: 'short' });
+            const startWd = startDate.toLocaleDateString(getLocale(), { weekday: 'short' });
+            const endWd = endDate.toLocaleDateString(getLocale(), { weekday: 'short' });
+            const month = startDate.toLocaleDateString(getLocale(), { month: 'short' });
             const year = startDate.getFullYear();
             return `${startWd} ${startDate.getDate()} – ${endWd} ${endDate.getDate()} ${month} ${year}`;
         } else {
             // Different months: "Mon, Aug 10 – Tue, Sep 1, 2026"
-            const startPart = startDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-            const endPart = endDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+            const startPart = startDate.toLocaleDateString(getLocale(), { weekday: 'short', month: 'short', day: 'numeric' });
+            const endPart = endDate.toLocaleDateString(getLocale(), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
             return `${startPart} – ${endPart}`;
         }
     }
@@ -550,8 +561,8 @@ export class TimelineView extends ItemView {
         card.dataset.entryDate = entry.date;
         card.dataset.entryLine = String(entry.lineNumber);
 
-        // Client color for left bar and header gradient
-        const clientColor = this.getClientColor(entry.client);
+        // Activity color for the left bar and header gradient
+        const clientColor = this.getActivityColor(entry.activity || '') || this.getProjectColor(entry.project || '');
         card.style.setProperty('--client-color', clientColor);
 
         // Duration-based layout classes
@@ -569,13 +580,12 @@ export class TimelineView extends ItemView {
         // Tooltip for hover
         const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
         const tooltipParts = [
-            entry.description || '(No description)',
+            entry.description || t('(No description)'),
             `${timeRange} (${this.formatDuration(entry.durationMinutes)})`,
-            `Client: ${this.getClientName(entry.client)}`,
         ];
-        if (entry.project) tooltipParts.push(`Project: ${this.getProjectName(entry.project)}`);
-        if (entry.activity) tooltipParts.push(`Activity: ${this.getActivityName(entry.activity)}`);
-        if (entry.linkedNote) tooltipParts.push(`Note: ${entry.linkedNote}`);
+        if (entry.project) tooltipParts.push(t('Project: {name}', { name: this.getProjectName(entry.project) }));
+        if (entry.activity) tooltipParts.push(t('Activity: {name}', { name: this.getActivityName(entry.activity) }));
+        if (entry.linkedNote) tooltipParts.push(t('Note: {name}', { name: entry.linkedNote }));
         card.setAttribute('title', tooltipParts.join('\n'));
 
         // === HEADER SECTION ===
@@ -590,11 +600,6 @@ export class TimelineView extends ItemView {
         // 15m layout: Tiny tags inline in header
         if (is15m) {
             const tinyTags = header.createDiv('entry-tiny-tags');
-
-            // Client tag
-            const clientTag = tinyTags.createSpan('tiny-tag');
-            clientTag.setText(this.getClientName(entry.client).substring(0, 3).toUpperCase());
-            clientTag.style.setProperty('--tag-color', clientColor);
 
             // Project tag
             if (entry.project) {
@@ -623,7 +628,7 @@ export class TimelineView extends ItemView {
         if (entry.linkedNote) {
             const noteIcon = icons.createSpan('entry-icon');
             setIcon(noteIcon, 'paperclip');
-            noteIcon.setAttribute('title', `Open: ${entry.linkedNote}`);
+            noteIcon.setAttribute('title', t('Open: {name}', { name: entry.linkedNote }));
             noteIcon.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.openLinkedNote(entry.linkedNote);
@@ -633,7 +638,7 @@ export class TimelineView extends ItemView {
         // Edit icon (pencil)
         const editIcon = icons.createSpan('entry-icon');
         setIcon(editIcon, 'pencil');
-        editIcon.setAttribute('title', 'Edit entry');
+        editIcon.setAttribute('title', t('Edit entry'));
         editIcon.addEventListener('click', (e) => {
             e.stopPropagation();
             this.openEditModal(entry);
@@ -642,7 +647,7 @@ export class TimelineView extends ItemView {
         // Delete icon (trash)
         const deleteIcon = icons.createSpan('entry-icon entry-icon-delete');
         setIcon(deleteIcon, 'trash-2');
-        deleteIcon.setAttribute('title', 'Delete entry');
+        deleteIcon.setAttribute('title', t('Delete entry'));
         deleteIcon.addEventListener('click', (e) => {
             e.stopPropagation();
             this.confirmDeleteEntry(entry);
@@ -660,11 +665,6 @@ export class TimelineView extends ItemView {
         // === FOOTER / POWERLINE (30m+ only) ===
         if (!is15m) {
             const footer = card.createDiv('entry-card-footer');
-
-            // Client segment
-            const clientSeg = footer.createSpan('powerline-seg');
-            clientSeg.setText(this.getClientName(entry.client));
-            clientSeg.style.setProperty('--seg-color', clientColor);
 
             // Project segment
             if (entry.project) {
@@ -714,6 +714,7 @@ export class TimelineView extends ItemView {
      * Start dragging an entry (move or resize) - mouse version
      */
     private startEntryDrag(e: MouseEvent, entry: TimeEntry, card: HTMLElement, mode: 'move' | 'resize-top' | 'resize-bottom'): void {
+        if (e.button !== 0) return;
         e.preventDefault();
         this.initEntryDrag(e.clientY, entry, card, mode);
         activeDocument.addEventListener('mousemove', this.handleEntryDragMove);
@@ -888,7 +889,7 @@ export class TimelineView extends ItemView {
             await this.refresh();
         } catch (err) {
             Logger.error('Failed to update entry after drag:', err);
-            new Notice('Failed to move entry. It may overlap with another entry.');
+            new Notice(t('Failed to move entry. It may overlap with another entry.'));
             // Revert visual position
             card.style.top = `${this.entryDragOriginalTop}px`;
             card.style.height = `${this.entryDragOriginalHeight}px`;
@@ -1009,8 +1010,8 @@ export class TimelineView extends ItemView {
             month: 'short',
             day: 'numeric',
         };
-        const formatted = date.toLocaleDateString(undefined, options);
-        return this.isToday(date) ? `Today · ${formatted}` : formatted;
+        const formatted = date.toLocaleDateString(getLocale(), options);
+        return this.isToday(date) ? `${t('Today')} · ${formatted}` : formatted;
     }
 
     private formatHour(hour: number): string {
@@ -1022,13 +1023,7 @@ export class TimelineView extends ItemView {
         return `${h} ${ampm}`;
     }
 
-    private formatDuration(minutes: number): string {
-        const hours = Math.floor(minutes / 60);
-        const mins = minutes % 60;
-        if (hours === 0) return `${mins}m`;
-        if (mins === 0) return `${hours}h`;
-        return `${hours}h ${mins}m`;
-    }
+    private formatDuration(minutes: number): string { return formatDuration(minutes); }
 
     private formatDateForInput(date: Date): string {
         const year = date.getFullYear();
@@ -1039,7 +1034,7 @@ export class TimelineView extends ItemView {
 
     private getProjectColor(projectId?: string): string {
         if (!projectId) return '#4f46e5';
-        const project = this.settings.projects.find(p => p.id === projectId || p.name === projectId);
+        const project = this.settings.projects.find(p => p.id === projectId || p.name === projectId || p.aliases?.includes(projectId));
         return project?.color || '#4f46e5';
     }
 
@@ -1047,31 +1042,15 @@ export class TimelineView extends ItemView {
      * Get color for an activity from settings
      */
     private getActivityColor(activityName: string): string | undefined {
-        const activity = this.settings.activities.find(a => a.name === activityName || a.id === activityName);
+        const activity = this.settings.activities.find(a => a.name === activityName || a.id === activityName || a.aliases?.includes(activityName));
         return activity?.color;
-    }
-
-    /**
-     * Get display name for a client from settings
-     */
-    private getClientName(clientId: string): string {
-        const client = this.settings.clients.find(c => c.id === clientId || c.name === clientId);
-        return client?.name || clientId;
-    }
-
-    /**
-     * Get color for a client from settings
-     */
-    private getClientColor(clientId: string): string {
-        const client = this.settings.clients.find(c => c.id === clientId || c.name === clientId);
-        return client?.color || '#4f46e5';
     }
 
     /**
      * Get display name for a project from settings
      */
     private getProjectName(projectId: string): string {
-        const project = this.settings.projects.find(p => p.id === projectId || p.name === projectId);
+        const project = this.settings.projects.find(p => p.id === projectId || p.name === projectId || p.aliases?.includes(projectId));
         return project?.name || projectId;
     }
 
@@ -1079,7 +1058,7 @@ export class TimelineView extends ItemView {
      * Get display name for an activity from settings
      */
     private getActivityName(activityId: string): string {
-        const activity = this.settings.activities.find(a => a.id === activityId || a.name === activityId);
+        const activity = this.settings.activities.find(a => a.id === activityId || a.name === activityId || a.aliases?.includes(activityId));
         return activity?.name || activityId;
     }
 
@@ -1114,7 +1093,8 @@ export class TimelineView extends ItemView {
             this.settings,
             this.dataManager,
             data,
-            () => { void this.refresh(); }
+            () => { void this.refresh(); },
+            this.saveSettings
         );
         modal.open();
     }
@@ -1135,7 +1115,8 @@ export class TimelineView extends ItemView {
             this.settings,
             this.dataManager,
             data,
-            () => { void this.refresh(); }
+            () => { void this.refresh(); },
+            this.saveSettings
         );
         modal.open();
     }
@@ -1146,7 +1127,9 @@ export class TimelineView extends ItemView {
     private confirmDeleteEntry(entry: TimeEntry): void {
         const timeRange = formatTimeRange(entry.start, entry.end, this.settings.use24HourFormat);
         new ConfirmDeleteModal(this.app, entry, timeRange, () => {
-            void this.dataManager.deleteEntry(entry).then(() => this.refresh());
+            void this.dataManager.deleteEntry(entry).then(() => this.refresh()).catch(error => {
+                new Notice(t('Failed to delete entry: {message}', { message: String(error) }));
+            });
         }).open();
     }
 
@@ -1531,7 +1514,8 @@ export class TimelineView extends ItemView {
             this.settings,
             this.dataManager,
             data,
-            () => { void this.refresh(); }
+            () => { void this.refresh(); },
+            this.saveSettings
         );
         modal.open();
     }
@@ -1555,7 +1539,7 @@ class ConfirmDeleteModal extends Modal {
         contentEl.empty();
         contentEl.addClass('time-tracker-confirm-delete');
 
-        contentEl.createEl('h2', { text: 'Delete entry' });
+        setModalTitle(this, t('Delete entry'));
 
         // Show entry details
         const details = contentEl.createDiv('delete-entry-details');
@@ -1571,18 +1555,18 @@ class ConfirmDeleteModal extends Modal {
         }
 
         contentEl.createEl('p', {
-            text: 'Are you sure you want to delete this entry? This cannot be undone.',
+            text: t('Are you sure you want to delete this entry? This cannot be undone.'),
             cls: 'delete-confirm-message',
         });
 
         // Buttons
         const buttonContainer = contentEl.createDiv('delete-button-container');
 
-        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+        const cancelBtn = buttonContainer.createEl('button', { text: t('Cancel') });
         cancelBtn.addEventListener('click', () => this.close());
 
         const deleteBtn = buttonContainer.createEl('button', {
-            text: 'Delete',
+            text: t('Delete'),
             cls: 'mod-warning',
         });
         deleteBtn.addEventListener('click', () => {

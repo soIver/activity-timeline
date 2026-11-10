@@ -6,6 +6,7 @@ import { TimelineView } from './src/views/TimelineView';
 import { ReportsView } from './src/views/ReportsView';
 import { EntryModal } from './src/modals/EntryModal';
 import { configureLanguage, t } from './src/i18n';
+import { ActivityManagerModal } from './src/modals/ActivityModal';
 import { Logger } from './src/utils/Logger';
 
 export default class ActivityTimelinePlugin extends Plugin {
@@ -27,7 +28,7 @@ export default class ActivityTimelinePlugin extends Plugin {
         // Register the timeline view
         this.registerView(
             VIEW_TYPE_TIMELINE,
-            (leaf) => new TimelineView(leaf, this.settings, this.dataManager)
+            (leaf) => new TimelineView(leaf, this.settings, this.dataManager, () => this.saveSettings())
         );
 
         // Register the reports view
@@ -71,6 +72,12 @@ export default class ActivityTimelinePlugin extends Plugin {
             callback: () => {
                 this.openCreateEntryModal();
             },
+        });
+
+        this.addCommand({
+            id: 'manage-activities',
+            name: t('Manage activities'),
+            callback: () => new ActivityManagerModal(this.app, this.settings, () => this.saveSettings()).open(),
         });
 
         // Add settings tab
@@ -191,7 +198,8 @@ export default class ActivityTimelinePlugin extends Plugin {
                 date: now,
                 startTime,
             },
-            () => this.refreshTimelineViews()
+            () => this.refreshTimelineViews(),
+            () => this.saveSettings()
         );
         modal.open();
     }
