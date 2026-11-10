@@ -1,93 +1,46 @@
-# Development Setup
+# Разработка Activity Timeline
 
-## Prerequisites
+Нужны Node.js с npm и тестовое хранилище Obsidian. Минимальная версия Obsidian указана в `manifest.json`.
 
-- Node.js 18+
-- npm
-- An Obsidian vault for testing
-
-## Getting Started
-
-```bash
-# Clone
-git clone https://github.com/plattnum/where-did-the-time-go.git
-cd where-did-the-time-go
-
-# Install dependencies
-npm install
-
-# Start dev mode (watches for changes, rebuilds automatically)
+```sh
+npm ci
 npm run dev
 ```
 
-## Test Vault
+`npm run dev` следит за исходниками и пересобирает `main.js` в корне репозитория. `npm run build` сначала проверяет типы, затем собирает плагин однократно. Стили подключаются Obsidian из `styles.css`.
 
-A test vault is included in the repo at `vaults/where-did-the-time-go-vault/`. This is where the plugin gets copied on build.
+## Тестовое хранилище
 
-To open in Obsidian:
-1. Open Obsidian → "Open another vault" → "Open folder as vault"
-2. Select `vaults/where-did-the-time-go-vault`
-3. The plugin is pre-installed and ready to use
+Если `<vault>/.obsidian/plugins/activity-timeline` — симлинк на репозиторий, ничего копировать не нужно. После сборки отключите и включите плагин или перезагрузите Obsidian.
 
-To use a different vault, either:
-1. **Edit the default** in `esbuild.config.mjs` (line 17)
-2. **Set an environment variable:** `export OBSIDIAN_TEST_VAULT="/path/to/your/vault"`
+Копирование в хранилище по умолчанию выключено. Для установки без симлинка укажите путь явно:
 
-## Build Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Watch mode - rebuilds on file changes, auto-copies to test vault |
-| `npm run build` | One-shot build with type-check, copies to test vault, then exits |
-| `npm run version` | Bump version in manifest.json and versions.json |
-
-**Tip:** If `npm run dev` stops picking up changes, just run `npm run build` for a clean one-shot rebuild.
-
-## Project Structure
-
-```
-src/
-├── main.ts              # Plugin entry point
-├── types.ts             # TypeScript interfaces
-├── settings.ts          # Settings tab UI
-├── data/
-│   ├── DataManager.ts   # CRUD operations, caching
-│   └── TableParser.ts   # Markdown table ↔ TimeEntry
-├── views/
-│   ├── TimelineView.ts  # Main calendar view
-│   └── ReportsView.ts   # Reports/export view
-└── modals/
-    └── EntryModal.ts    # Create/edit entry form
+```sh
+OBSIDIAN_TEST_VAULT=/absolute/path/to/vault npm run dev
 ```
 
-## Data Files
+Каталог назначения определяется из `manifest.json`. Сборка не копирует файлы сами в себя при симлинке и не копирует результат при ошибках сборки.
 
-Time entries are stored in your vault as markdown tables:
-```
-<vault>/TimeTracking/YYYY-MM.md
-```
+## Проверки
 
-One file per month. Human-readable. Don't edit manually while the plugin is running.
-
-## Releasing
-
-Releases are triggered by pushing a git tag. The GitHub Action builds the plugin and creates a draft release.
-
-```bash
-# 1. Bump version in manifest.json and versions.json
-npm run version
-
-# 2. Commit the version bump
-git add manifest.json versions.json
-git commit -m "chore: Bump version to X.Y.Z"
-
-# 3. Create and push a tag
-git tag X.Y.Z
-git push origin main --tags
+```sh
+npm run build
+npm test -- --runInBand
+npx eslint main.ts src
 ```
 
-This triggers the release workflow which:
-1. Builds the plugin
-2. Creates a **draft** release with `main.js`, `manifest.json`, and `styles.css` attached
+Тесты покрывают разбор Markdown старого и нового форматов, пересечения и границы дат, компоненты времени, локализацию, отчёты, сохранение активностей, восстановление цветов и обработку кнопок карточек через SVG-элементы.
 
-Go to [GitHub Releases](https://github.com/plattnum/where-did-the-time-go/releases) to review and publish the draft.
+В Obsidian отдельно проверьте системное поведение Arch KDE: нажатия карандаша и корзины, перетаскивание карточек, выделение интервала, работу палитры мышью и клавиатурой. DOM-тесты используют JSDOM и не заменяют проверку в Electron.
+
+## Код
+
+- `main.ts` — команды, представления, сохранение настроек.
+- `src/i18n.ts` — типизированный словарь RU/EN, форматирование длительности и определение языка Obsidian.
+- `src/modals/ActivityModal.ts` — создание и управление активностями/проектами.
+- `src/components/ColorPalette.ts` — встроенная палитра.
+- `src/modals/EntryModal.ts` — форма записи времени.
+- `src/views/` — таймлайн и отчёты.
+- `src/data/` — Markdown, кэш и изменения записей.
+
+Новые настройки не содержат клиентов и биллинга. Старые дополнительные поля `data.json` сохраняются через объединение с настройками по умолчанию. Поля `client`/`clientId` используются только для сохранения совместимости с исходными данными, не для фильтрации или группировки.

@@ -1,230 +1,49 @@
-# Where Did The Time Go?
+# Activity Timeline
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
+Плагин Obsidian для учёта собственного времени на основе [Where Did The Time Go](https://github.com/plattnum/where-did-the-time-go) от Plattnum. Лицензия MIT, исходное уведомление об авторских правах сохранено в [LICENSE](LICENSE).
 
-**A visual time tracking plugin for Obsidian.** An infinite-scroll timeline to log your hours, hierarchical reports to see where they went, and one-click invoicing to bill for them. Your data stays in your vault as plain markdown tables - no cloud, no sync, no subscriptions.
+- Таймлайн: выделение интервала для новой записи, перемещение и изменение длительности существующих записей.
+- Общие активности и необязательные проекты; интерфейс клиентов, тарифов и счетов удалён.
+- Активности доступны через команду **Управление активностями**. В форме записи есть **Управление активностями** и **Управление проектами** рядом с соответствующими полями. Создание в менеджере открывается кнопкой **Новая активность**.
+- Встроенная палитра: поле насыщенности и яркости, ползунок тона, HEX и числовые RGB. При редактировании восстанавливается текущий цвет. Поле поддерживает стрелки клавиатуры, Shift увеличивает шаг.
+- Поля проекта и активности предлагают существующие названия через штатные подсказки Obsidian. Пустое поле означает отсутствие категории. Неизвестные проекты, активности и пути заметок блокируют сохранение и показывают ошибку под соответствующим полем. Проверка выполняется при потере фокуса и при сохранении; во время ввода предупреждения скрыты. Начало и конец интервала проверяются после выхода из всего блока времени.
+- Поле связанной заметки предлагает существующие Markdown-заметки через штатный выпадающий список Obsidian с поиском по названию и полному пути.
+- Отчёты по проектам с разбивкой по активностям, отдельная сводка по активностям и экспорт CSV/JSON.
+- Русский и английский интерфейсы. По умолчанию язык определяется настройкой Obsidian; можно выбрать его вручную в настройках плагина. Для остальных языков используется английский. После смены языка перезагрузите плагин, чтобы обновить названия команд и подсказки боковой панели.
+- Поля часов и минут поддерживают изменение колесом мыши при наведении: вверх — увеличить на 1, вниз — уменьшить на 1.
 
-**Website:** [plattnum.github.io/where-did-the-time-go](https://plattnum.github.io/where-did-the-time-go/) · **Install:** [Obsidian community plugin page](https://community.obsidian.md/plugins/where-did-the-time-go)
+## Использование
 
-> [!IMPORTANT]
-> **Experimental: AI-drivable CLI** — There's now a companion command-line tool, **[o-wdttg-cli](https://github.com/plattnum/o-wdttg-cli)**, that exposes this plugin through the new Obsidian CLI. It creates an AI-drivable surface so agents (like Claude) can read, write, and report on your time entries on your behalf. Experimental — build from source for now. Future releases plan to ship pre-built binaries downloadable from the plugin settings.
+Откройте **Activity Timeline: Открыть таймлайн** через палитру команд или значок часов слева. Создайте активность, выделите мышью интервал и заполните запись. Для редактирования нажмите карандаш в карточке, для удаления — корзину. Новый интервал также можно создать двойным щелчком или кнопкой `+`.
 
-## Why This Exists
+Проекты создаются в настройках через **Управление проектами**. Они необязательны. При переименовании проекта или активности ID остаётся прежним, а старое название сохраняется как псевдоним для существующих записей. Удаление категории не удаляет записи времени.
 
-I got tired of:
-- SaaS time trackers that take 10 seconds to load
-- Monthly subscriptions for what amounts to a fancy spreadsheet
-- Google Sheets (it works, but it's not fun)
-- Apps that include "team collaboration features" when I just work alone
-- Syncing conflicts, server outages, and "we're updating our privacy policy" emails
+## Данные и совместимость
 
-I wanted something **simple**: click, enter time, done. Data lives in my vault as plain markdown. Works offline. Loads instantly. No account required. No telemetry. No upsells.
-
-If you need Gantt charts, resource allocation, task managment, or enterprise reporting - this isn't for you. If you just want to track where your hours went so you can bill clients or finally answer "wait, what did I actually do yesterday?".
-
-**No timer feature.** I don't track my work by hitting start/stop on a stopwatch - it just doesn't fit how I work. I enter my time after the fact. If you need a running timer, this plugin isn't for you.
-
-**Not a task manager.** This is purely time tracking - logging hours after the fact. My tasks live in external systems (Jira, Linear, GitHub Issues, etc). I didn't want to integrate with Obsidian Tasks or other task plugins that scan your entire vault. This plugin stays in its lane: you tell it what you worked on and when, it writes that to a table. That's it.
-
-## Features
-
-### ∞ Timeline
-Visual day-by-day timeline that scrolls infinitely in both directions. Drag to create entries, drag to move them, resize to adjust duration. Click to edit.
-
-<img src="docs/infinite-timeline-view-sshot.png" width="50%" alt="Timeline View">
-
-### Simple Data Model
-- **Clients** - Who you're billing (or "Personal" if you're tracking for yourself)
-- **Projects** - What you're working on
-- **Activities** - Type of work (dev, meeting, admin, etc.)
-- **Linked Notes** - Optional wikilink to related notes in your vault
-
-That's it. No tags, labels, priorities, estimates, story points, or whatever else PM tools have invented to justify their existence.
-
-### Plain Markdown Storage
-Your data lives in `TimeTracking/YYYY-MM.md` files as markdown tables:
+Записи хранятся в `TimeTracking/YYYY-MM.md` внутри хранилища. Папку можно изменить в настройках.
 
 ```markdown
-| Start            | End              | Description     | Client | Project | Activity | Notes |
-| :--------------- | :--------------- | :-------------- | :----- | :------ | :------- | :---- |
-| 2024-01-15 09:00 | 2024-01-15 10:30 | Morning standup | acme   | webapp  | meeting  |       |
-| 2024-01-15 10:30 | 2024-01-15 12:00 | Fix login bug   | acme   | webapp  | dev      |       |
+| Start            | End              | Description | Project | Activity | Notes |
+| ---------------- | ---------------- | ----------- | ------- | -------- | ----- |
+| 2026-11-09 09:00 | 2026-11-09 10:30 | Глава книги |         | Чтение   |       |
 ```
 
-One file per month. Human-readable. Git-friendly. Portable - if this plugin dies, your data doesn't.
+Названия колонок и даты в файлах остаются стабильными независимо от языка интерфейса. Скрытие таблиц в режиме чтения управляется настройкой плагина.
 
-### Reports View
-See where your time actually went. Select a date range and get a hierarchical breakdown: **Client → Project → Activity**, with hours and billable amounts at each level. Expand any level to drill down. Export to CSV or JSON when your accountant asks for timesheets.
+Таблицы исходного плагина с колонкой `Client` читаются; неперсональные значения этой колонки сохраняются при перезаписи месяца, но не отображаются в интерфейсе и отчётах. Старые поля настроек сохраняются при загрузке и сохранении, хотя функции биллинга отсутствуют. Активности и проекты из разных прежних клиентов доступны в общем списке.
 
-<img src="docs/time-report-view-sshot.png" width="50%" alt="Reports View">
+Идентификатор плагина — `activity-timeline`; типы представлений также отличаются от оригинала. Настройки исходного плагина автоматически из его каталога не импортируются: при необходимости скопируйте `data.json` в каталог Activity Timeline при отключённом плагине и укажите прежнюю папку записей.
 
-### Invoice Generation
-Generate markdown invoices directly from the Reports view. Each client row shows an **Invoice** button when there's billable time. Click it to:
+## Разработка
 
-1. Enter invoice number, issue date, and payment terms
-2. Due date auto-calculates based on payment terms
-3. Generate a markdown invoice with:
-   - Your "Bill From" info (configured in Settings)
-   - Client's billing address
-   - Line items grouped by project (hours × rate)
-   - Subtotal and total in the client's currency
-
-Invoices are saved to your invoice folder (default: `TimeTracking/Invoices/`) as `{invoice-number}.md`. The generated markdown renders nicely in Obsidian and can be exported to PDF.
-
-Not billing anyone? Turn off **Enable billing and invoicing** in Settings to hide rates, billable amounts, and the Invoice button. Your saved billing details are kept, so turning it back on restores everything.
-
-### Overlap Detection
-Won't let you accidentally double-book yourself. The timeline shows conflicts in real-time.
-
-### Midnight-Spanning Entries
-Working late? Entries can cross midnight without breaking. The plugin handles multi-day entries correctly.
-
-## Installation
-
-### From Obsidian Community Plugins
-Requires Obsidian 1.13.0 or later. [View it on the community plugin page](https://community.obsidian.md/plugins/where-did-the-time-go), or in Obsidian:
-1. Open Settings → Community Plugins
-2. Search for "Where Did The Time Go"
-3. Install and enable
-
-### Manual Installation
-1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release
-2. Create folder: `<vault>/.obsidian/plugins/where-did-the-time-go/`
-3. Copy the files into that folder
-4. Enable the plugin in Settings → Community Plugins
-
-### Using BRAT
-1. Install the [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat)
-2. Open BRAT settings → Add Beta Plugin
-3. Enter: `https://github.com/plattnum/where-did-the-time-go`
-4. Enable the plugin in Settings → Community Plugins
-
-## Usage
-
-After enabling, you'll see two icons in the left sidebar:
-
-<img src="docs/left-sidebar-icons.png" width="60" alt="Sidebar Icons">
-
-Click to open the **∞ Timeline** or **Reports** view.
-
-### Creating Entries
-- **Click + drag** on the timeline to create an entry
-- **Click** the + button in the toolbar
-- **Command palette** (`Ctrl/Cmd + P`) → "Create Time Entry"
-- Fill in the details, hit Save
-
-### Editing Entries
-- **Click** an entry card to edit
-- **Drag** entries to move them
-- **Drag edges** to resize (change duration)
-
-### Entry Modal Fields
-
-<img src="docs/new-time-entry-modal.png" width="50%" alt="Entry Modal">
-
-When creating or editing an entry, you'll see these fields:
-
-| Field | Description |
-|-------|-------------|
-| **Start** | Date and time the entry begins. 🧲 magnet button appears if there's an adjacent entry - click to snap to previous entry's end time. |
-| **Duration** | Calculated automatically from start/end. You can also type directly (e.g., "1h 30m", "90m", "1.5h") and end time updates. |
-| **End** | Date and time the entry ends. 🧲 magnet button snaps to next entry's start time if one exists. |
-| **Client** | Required. Who you're billing. Configure clients in Settings. |
-| **Project** | Optional. Filtered to show only projects belonging to the selected client. |
-| **Activity** | Optional. Type of work (dev, meeting, etc.). Filtered by client. |
-| **Description** | What you worked on. Character limit configurable in Settings. |
-| **Linked Note** | Optional path to a related note. Use "Browse" to search existing notes or "Create New" to make one. |
-
-**Overlap detection**: If your entry overlaps with an existing one, the conflicting times highlight red and Save is disabled until you fix it.
-
-### Command Palette
-- `Create Time Entry` - Open entry form directly (pre-fills current time)
-- `Open Timeline` - Open the timeline view
-- `Open Reports` - Open the reports view
-
-## Settings
-
-| Setting | Description |
-|---------|-------------|
-| **Time tracking folder** | Where to store monthly files (default: `TimeTracking`) |
-| **Hide tables in preview** | Wrap tables in `%%` comments. If you open a monthly file directly, Obsidian won't try to render a large table - improves performance for busy months |
-| **Hour height** | Pixels per hour in timeline (200-240) |
-| **Day start/end hour** | Visible range in timeline |
-| **Week start** | Monday or Sunday |
-| **24-hour format** | Toggle 24h vs 12h time display |
-| **Description max length** | Character limit for descriptions (0 = unlimited) |
-| **Enable billing and invoicing** | Show client rates, billable amounts in reports, and invoice generation (default: on). Turn off if you only track time |
-| **Bill From name** | Your name or business name for invoices |
-| **Bill From address** | Your billing address (multi-line) for invoices |
-| **Invoice folder** | Where generated invoices are saved (default: `TimeTracking/Invoices`) |
-
-## Clients, Projects & Activities
-
-Configure in Settings:
-
-- **Clients** - Each has a name, color, hourly rate, currency, billing address, and payment terms (for invoicing)
-- **Projects** - Belong to a client, can override the client's hourly rate
-- **Activities** - Work types (dev, meeting, review, etc.) per client
-
-Colors appear as left-border indicators on timeline entries.
-
-## Data Format
-
-Monthly files follow this structure:
-
-```markdown
-%%
-⚠️ WARNING: This file is managed by the "Where Did The Time Go" plugin.
-Do not edit manually - your changes may be overwritten.
-%%
-
-# 2024-01
-
-| Start            | End              | Description | Client | Project | Activity | Notes |
-| :--------------- | :--------------- | :---------- | :----- | :------ | :------- | :---- |
-| 2024-01-15 09:00 | 2024-01-15 10:30 | Standup     | acme   | webapp  | meeting  |       |
+```sh
+npm ci
+npm run build
+npm test -- --runInBand
 ```
 
-The `%%` markers hide the table in Obsidian's reading view (configurable in settings).
+Сборка создаёт `main.js` в корне репозитория. При симлинке каталога плагина на репозиторий достаточно собрать и перезагрузить плагин в Obsidian. Режим автоматической пересборки: `npm run dev`.
 
-## FAQ
+Для установки нужны `main.js`, `manifest.json`, `styles.css` в `<хранилище>/.obsidian/plugins/activity-timeline/`.
 
-**Q: Can I edit the markdown files directly?**
-A: You can, but the plugin may overwrite your changes. Use the Timeline view.
-
-**Q: Does it sync across devices?**
-A: It's just .md files. If your vault syncs (Obsidian Sync, iCloud, Dropbox, Git), your time entries sync.
-
-**Q: Can I query entries with Dataview?**
-A: No. Dataview doesn't parse markdown tables. Your data is portable plain text, but you'll use the Reports view for analysis.
-
-**Q: What happens if I uninstall the plugin?**
-A: Your data stays. It's just markdown files.
-
-## Development
-
-The repo includes a test vault at `vaults/where-did-the-time-go-vault/` with:
-- 3 fictitious clients (Acme Rocket Supplies, Umbrella Corporation, Weyland-Yutani)
-- 9 projects and 18 activities
-- 74 test time entries across Nov-Dec 2025
-- Edge cases: midnight-spanning entries, month boundaries, rapid 15-min entries
-
-Run `npm run dev` to build in watch mode - output auto-copies to the test vault. See `docs/DEVELOPMENT.md` for details.
-
-## Contributing
-
-This is my side project - something I hack on when I have spare time. Not accepting pull requests for now, but feel free to open issues for bugs or feature ideas.
-
-## License
-
-MIT - Do whatever you want with it.
-
-## Support
-
-If this plugin saves you time, consider buying me a coffee.
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
-
----
-
-*Built because I needed it, shared because maybe you do too.*
+Дополнительные детали — в [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
