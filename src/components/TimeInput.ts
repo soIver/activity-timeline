@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { bindFieldValidation } from './FieldValidation';
 import { TimePickerPopup } from './TimePickerPopup';
 
 /** A locale-independent time control. Values crossing its boundary are always HH:mm. */
@@ -10,6 +11,7 @@ export class TimeInput {
     private readonly period: HTMLSelectElement | null;
     private readonly pickerButton: HTMLButtonElement;
     private popup: TimePickerPopup | null = null;
+    private readonly stopValidation: () => void;
 
     constructor(
         container: HTMLElement,
@@ -76,6 +78,7 @@ export class TimeInput {
             }
         });
         this.setValue(value);
+        this.stopValidation = bindFieldValidation(this.inputEl, () => { this.validate(); }, () => this.clearValidation());
     }
 
     /** Empty means incomplete or invalid, so callers cannot save an old value by mistake. */
@@ -100,11 +103,12 @@ export class TimeInput {
             this.hours.value = '';
             this.minutes.value = '';
         }
-        this.updateValidity();
+        this.updateValidity(false);
         this.popup?.sync();
     }
 
     destroy(): void {
+        this.stopValidation();
         this.popup?.close();
     }
 
@@ -185,17 +189,24 @@ export class TimeInput {
             ? value : null;
     }
 
-    private updateValidity(): void {
+    validate(): boolean {
+        this.updateValidity(true);
+        return this.getValue() !== '';
+    }
+
+    clearValidation(): void { this.updateValidity(false); }
+
+    private updateValidity(showErrors: boolean): void {
         for (const input of [this.hours, this.minutes]) {
             const value = this.readSegment(input);
-            input.setAttribute('aria-invalid', String(value === null));
+            input.setAttribute('aria-invalid', String(showErrors && value === null));
             if (value === null) input.removeAttribute('aria-valuenow');
             else input.setAttribute('aria-valuenow', String(value));
         }
     }
 
     private notifyChange(): void {
-        this.updateValidity();
+        this.updateValidity(false);
         this.popup?.sync();
         this.onChange(this.getValue());
     }

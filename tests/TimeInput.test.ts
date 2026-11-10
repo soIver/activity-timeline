@@ -201,10 +201,14 @@ describe('TimeInput', () => {
         expect(control.getValue()).toBe('02:05');
     });
 
-    it.each(['', '24', '-1', 'a', '123', ' 2'])('rejects invalid 24-hour input %j without keeping the old time', (value) => {
+    it.each(['', '24', '-1', 'a', '123', ' 2'])('rejects invalid 24-hour input %j after blur, without keeping the old time', async (value) => {
         const { hours, control, onChange } = setup();
+        hours.focus();
         type(hours, value);
         expect(control.getValue()).toBe('');
+        expect(hours.getAttribute('aria-invalid')).toBe('false');
+        hours.blur();
+        await Promise.resolve();
         expect(hours.getAttribute('aria-invalid')).toBe('true');
         expect(hours.hasAttribute('aria-valuenow')).toBe(false);
         expect(onChange).toHaveBeenLastCalledWith('');
